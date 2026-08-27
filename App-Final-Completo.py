@@ -2,39 +2,32 @@ import streamlit as st
 import pandas as pd
 import hashlib
 from datetime import datetime
-from io import BytesIO
 import json
 import os
+from io import BytesIO
 
-st.set_page_config(page_title="A&K BRS v3.4 PERSISTENTE", layout="wide", page_icon="📞")
+st.set_page_config(page_title="A&K BRS v3.4 RANKING", layout="wide", page_icon="🏆")
 
-# --- PERSISTÊNCIA ---
 ARQUIVO_BASE = "brs_base_persistente.json"
-
 def salvar_base():
     try:
         with open(ARQUIVO_BASE, 'w', encoding='utf-8') as f:
             json.dump(st.session_state.leads, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+    except: pass
 
 def carregar_base():
     if os.path.exists(ARQUIVO_BASE):
         try:
             with open(ARQUIVO_BASE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            return []
+        except: return []
     return []
 
-# --- INIT ---
 if 'leads' not in st.session_state:
-    # Tenta carregar do arquivo
-    base_carregada = carregar_base()
-    st.session_state.leads = base_carregada
+    st.session_state.leads = carregar_base()
     st.session_state.selected_id = None
-    if base_carregada:
-        st.toast(f"✅ Base recuperada: {len(base_carregada)} clientes salvos!", icon="💾")
+    st.session_state.auto_next = True
+    st.session_state.call_start = {}
 
 try:
     import openpyxl
@@ -42,177 +35,237 @@ try:
 except:
     OPENPYXL_OK = False
 
-col_logo, col_reset = st.columns([4,1])
+def formatar_tempo(seg):
+    if not seg or seg<=0: return "00:00"
+    m=int(seg//60); s=int(seg%60)
+    return f"{m:02d}:{s:02d}"
+
+def proximo_pendente(atual_id=None):
+    pend=[l for l in st.session_state.leads if l['status']=='pendente']
+    if not pend: return None
+    if not atual_id: return pend[0]['id']
+    ids=[l['id'] for l in pend]
+    if atual_id not in ids: return pend[0]['id']
+    idx=ids.index(atual_id)
+    if idx+1 < len(ids): return ids[idx+1]
+    return pend[0]['id'] if len(pend)>1 else None
+
+# Header
+col_logo, col_auto, col_reset = st.columns([3,1,1])
 with col_logo:
-    st.markdown("### A&K Soluções Financeiras (BRS) **v3.4 PERSISTENTE - NÃO APAGA MAIS**")
-    if st.session_state.leads:
-        st.caption(f"💾 Base salva automaticamente | {len(st.session_state.leads)} clientes na memória permanente | CSV 100% + XLSX 40 bancos | tel: integrado")
-    else:
-        st.caption("💾 Persistência ativada | Salva automático mesmo com F5 ou fechar página | CSV 100% + XLSX 40 bancos")
+    st.markdown("### A&K BRS v3.4 **🏆 RANKING BANCOS + CRONÔMETRO**")
+    st.caption(f"💾 {len(st.session_state.leads)} clientes | ⏱️ Cronômetro | 🏆 Ranking Bancos")
+with col_auto:
+    st.session_state.auto_next = st.checkbox("⏭️ Auto-pular", value=True)
 with col_reset:
-    if st.button("🗑️ RESETAR BASE", use_container_width=True):
-        if os.path.exists(ARQUIVO_BASE):
-            os.remove(ARQUIVO_BASE)
-        st.session_state.leads = []
-        st.session_state.selected_id = None
-        st.toast("Base apagada permanentemente", icon="🗑️")
-        st.rerun()
+    if st.button("🗑️ RESETAR", use_container_width=True):
+        if os.path.exists(ARQUIVO_BASE): os.remove(ARQUIVO_BASE)
+        st.session_state.leads=[]; st.session_state.selected_id=None; st.session_state.call_start={}; st.rerun()
 
-# Mostra status persistência
-if st.session_state.leads:
-    st.success(f"💾 **PERSISTÊNCIA ATIVA:** {len(st.session_state.leads)} clientes salvos. Pode dar F5 ou fechar a página que NÃO APAGA. Último salvamento: {datetime.now().strftime('%d/%m %H:%M:%S')}")
-
-# ETAPA 1 - IMPORTAÇÃO DUAL
-st.markdown("#### 1️⃣ IMPORTAÇÃO DUAL - 2 FORMAS (com persistência)")
-
-tab_csv, tab_xlsx, tab_backup = st.tabs(["📄 FORMA 1: CSV", "📊 FORMA 2: XLSX (40 bancos)", "💾 BACKUP / RESTAURAR"])
-
+# Import
+st.markdown("#### 1️⃣ IMPORTAÇÃO")
+tab_csv, tab_xlsx, tab_backup = st.tabs(["📄 CSV", "📊 XLSX 40 bancos", "💾 BACKUP"])
 def processar_df(df):
-    df.columns = [str(c).upper().strip() for c in df.columns]
-    col_nome = next((c for c in df.columns if 'NOME' in c), df.columns[0])
-    col_cpf = next((c for c in df.columns if 'CPF' in c), None)
-    col_tel = next((c for c in df.columns if 'TELEFONE' in c or c=='TEL' or 'CEL' in c), None)
-    col_banco = next((c for c in df.columns if 'BANCO' in c), None)
-    existentes = set([l['id'] for l in st.session_state.leads])
-    novos = []
-    duplicados = 0
+    df.columns=[str(c).upper().strip() for c in df.columns]
+    col_nome=next((c for c in df.columns if 'NOME' in c), df.columns[0])
+    col_cpf=next((c for c in df.columns if 'CPF' in c), None)
+    col_tel=next((c for c in df.columns if 'TELEFONE' in c or c=='TEL' or 'CEL' in c), None)
+    col_banco=next((c for c in df.columns if 'BANCO' in c), None)
+    existentes=set([l['id'] for l in st.session_state.leads])
+    novos=[]; dup=0
     for idx, row in df.iterrows():
-        cpf = str(row.get(col_cpf, '')).strip() if col_cpf else f"semcpf{idx}"
-        tel = str(row.get(col_tel, '')).strip() if col_tel else ''
-        if not tel or tel.lower() == 'nan' or len(tel) < 8:
-            continue
-        h = hashlib.sha256(f"{cpf}{tel}".encode()).hexdigest()[:12]
-        if h in existentes:
-            duplicados += 1
-            continue
+        cpf=str(row.get(col_cpf,'')).strip() if col_cpf else f"semcpf{idx}"
+        tel=str(row.get(col_tel,'')).strip() if col_tel else ''
+        if not tel or tel.lower()=='nan' or len(tel)<8: continue
+        h=hashlib.sha256(f"{cpf}{tel}".encode()).hexdigest()[:12]
+        if h in existentes: dup+=1; continue
         existentes.add(h)
-        novos.append({
-            "id": h, "nome": str(row.get(col_nome, f'Lead {idx}'))[:40],
-            "cpf": cpf, "telefone": tel, "banco": str(row.get(col_banco, 'PAN'))[:20] if col_banco else 'PAN',
-            "produto": str(row.get('PRODUTO','FGTS')), "status": "pendente", "tentativas": 0, "ultima": "Nunca",
-        })
-    return novos, duplicados, len(df)
+        novos.append({"id":h,"nome":str(row.get(col_nome,f'Lead {idx}'))[:40],"cpf":cpf,"telefone":tel,"banco":str(row.get(col_banco,'PAN')).upper()[:20] if col_banco else 'PAN',"produto":str(row.get('PRODUTO','FGTS')),"status":"pendente","tentativas":0,"ultima":"Nunca","duracao_seg":0,"duracao_txt":"00:00","inicio_lig":"","fim_lig":""})
+    return novos, dup, len(df)
 
 with tab_csv:
-    up_csv = st.file_uploader("Arraste CSV", type=["csv"], key="csv")
-    if up_csv:
-        df = pd.read_csv(up_csv)
-        novos, dup, tot = processar_df(df)
-        st.session_state.leads.extend(novos)
-        salvar_base()
-        st.success(f"✅ CSV: {tot} lidos • {dup} duplicados • {len(novos)} novos • Total: {len(st.session_state.leads)} • 💾 SALVO AUTOMATICAMENTE")
-        if novos and not st.session_state.selected_id:
-            st.session_state.selected_id = novos[0]['id']
-
+    up=st.file_uploader("CSV", type=["csv"], key="csv")
+    if up:
+        df=pd.read_csv(up); novos,dup,tot=processar_df(df)
+        st.session_state.leads.extend(novos); salvar_base()
+        st.success(f"✅ {tot} lidos • {len(novos)} novos • Total {len(st.session_state.leads)}")
+        if novos and not st.session_state.selected_id: st.session_state.selected_id=novos[0]['id']
 with tab_xlsx:
-    if not OPENPYXL_OK:
-        st.error("❌ openpyxl ainda instalando - Use CSV por enquanto - Mesmo assim salva automático")
+    if not OPENPYXL_OK: st.error("openpyxl instalando - Use CSV")
     else:
-        st.success("✅ XLSX liberado - 40 bancos")
-        up_xlsx = st.file_uploader("Arraste XLSX/XLS", type=["xlsx","xls"], key="xlsx")
-        if up_xlsx:
-            df = pd.read_excel(up_xlsx, engine='openpyxl')
-            novos, dup, tot = processar_df(df)
-            st.session_state.leads.extend(novos)
-            salvar_base()
-            st.success(f"✅ XLSX: {tot} lidos • {dup} dup • {len(novos)} novos • Total: {len(st.session_state.leads)} • 💾 SALVO")
-
+        up=st.file_uploader("XLSX", type=["xlsx","xls"], key="xlsx")
+        if up:
+            df=pd.read_excel(up, engine='openpyxl'); novos,dup,tot=processar_df(df)
+            st.session_state.leads.extend(novos); salvar_base()
+            st.success(f"✅ XLSX {tot} lidos • {len(novos)} novos")
 with tab_backup:
-    st.markdown("**💾 Como não perder nunca (mesmo fechando navegador):**")
-    st.info("O app já salva automático em `brs_base_persistente.json` e aguenta F5. Mas se você limpar cache do navegador ou o Streamlit reiniciar, use esse backup:")
-    
     if st.session_state.leads:
-        # Exportar backup JSON
-        backup_json = json.dumps(st.session_state.leads, ensure_ascii=False, indent=2)
-        st.download_button("⬇️ BAIXAR BACKUP COMPLETO (JSON) - Guarda no PC", backup_json.encode('utf-8'), file_name=f"BACKUP_BRS_{datetime.now().strftime('%d%m%Y_%H%M')}.json", mime="application/json", type="primary", use_container_width=True)
-        
-        df_exp = pd.DataFrame(st.session_state.leads)
-        st.download_button("⬇️ BAIXAR BACKUP CSV (abre no Excel)", df_exp.to_csv(index=False).encode('utf-8'), file_name=f"BACKUP_BRS_{datetime.now().strftime('%d%m%Y')}.csv", mime="text/csv", use_container_width=True)
-    
-    st.markdown("**Restaurar backup:**")
-    up_backup = st.file_uploader("Arraste seu backup JSON aqui para restaurar", type=["json"], key="backup")
-    if up_backup:
-        try:
-            leads_restore = json.load(up_backup)
-            st.session_state.leads = leads_restore
-            salvar_base()
-            st.success(f"✅ Backup restaurado: {len(leads_restore)} clientes • 💾 Salvo permanentemente")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro restore: {e}")
+        st.download_button("⬇️ BACKUP JSON", json.dumps(st.session_state.leads, ensure_ascii=False, indent=2).encode('utf-8'), file_name=f"BACKUP_{datetime.now().strftime('%d%m%Y_%H%M')}.json", mime="application/json", type="primary", use_container_width=True)
+    up=st.file_uploader("Restaurar JSON", type=["json"], key="backup")
+    if up:
+        st.session_state.leads=json.load(up); salvar_base(); st.success("✅ Restaurado"); st.rerun()
 
-# ETAPA 2
-st.markdown("#### 2️⃣ QUEM FALTA LIGAR + QUANTIDADE (persistente)")
-
+# Lista
+st.markdown("#### 2️⃣ QUEM FALTA LIGAR")
 if not st.session_state.leads:
-    st.warning("👆 Importe CSV ou XLSX - Vai ficar salvo mesmo com F5")
+    st.warning("Importe CSV")
 else:
-    counts = {
-        "todos": len(st.session_state.leads),
-        "pendentes": len([l for l in st.session_state.leads if l['status']=='pendente']),
-        "ligados": len([l for l in st.session_state.leads if l['status']!='pendente']),
-        "retornos": len([l for l in st.session_state.leads if l['status']=='retorno_futuro']),
-        "vendas": len([l for l in st.session_state.leads if l['status']=='venda_finalizada']),
-    }
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("TOTAL BASE", counts['todos'], f"{counts['pendentes']} pendentes")
-    c2.metric("🔴 FALTAM LIGAR", counts['pendentes'], "PERSISTENTE", delta_color="inverse")
-    c3.metric("🟢 JÁ LIGADOS", counts['ligados'])
-    c4.metric("🟠 RETORNOS", counts['retornos'])
-    c5.metric("💰 VENDAS", counts['vendas'])
-    
-    st.markdown(f"## 📞 FALTAM LIGAR: **{counts['pendentes']}** de {counts['todos']} | 💾 Salvo permanente")
-
-    col_list, col_disc = st.columns([1,1.6])
+    counts={"todos":len(st.session_state.leads),"pendentes":len([l for l in st.session_state.leads if l['status']=='pendente']),"atendidos":len([l for l in st.session_state.leads if l['status']=='atendido']),"nao_at":len([l for l in st.session_state.leads if l['status']=='nao_atendeu']),"retornos":len([l for l in st.session_state.leads if l['status']=='retorno_futuro']),"vendas":len([l for l in st.session_state.leads if l['status']=='venda_finalizada'])}
+    c1,c2,c3,c4,c5,c6=st.columns(6)
+    c1.metric("TOTAL",counts['todos']); c2.metric("🔴 FALTAM",counts['pendentes']); c3.metric("🟢 ATEND",counts['atendidos']); c4.metric("🔴 NÃO AT",counts['nao_at']); c5.metric("🟠 RET",counts['retornos']); c6.metric("💰 VENDAS",counts['vendas'])
+    col_list, col_disc = st.columns([1,1.8])
     with col_list:
-        filtro = st.radio("Filtro", ["PENDENTES - FALTA LIGAR","TODOS","LIGADOS","RETORNOS","VENDAS"], label_visibility="collapsed", index=0)
-        busca = st.text_input("Buscar", placeholder="Nome, banco, telefone", label_visibility="collapsed")
-        lista = []
+        filtro=st.radio("Filtro", ["PENDENTES","ATENDIDOS","NÃO ATENDEU","RETORNOS","VENDAS","TODOS"], label_visibility="collapsed", index=0)
+        busca=st.text_input("Buscar", placeholder="Nome, banco", label_visibility="collapsed")
+        lista=[]
         for l in st.session_state.leads:
-            if filtro == "PENDENTES - FALTA LIGAR" and l['status']!='pendente': continue
-            if filtro == "LIGADOS" and l['status']=='pendente': continue
-            if filtro == "RETORNOS" and l['status']!='retorno_futuro': continue
-            if filtro == "VENDAS" and l['status']!='venda_finalizada': continue
+            if filtro=="PENDENTES" and l['status']!='pendente': continue
+            if filtro=="ATENDIDOS" and l['status']!='atendido': continue
+            if filtro=="NÃO ATENDEU" and l['status']!='nao_atendeu': continue
+            if filtro=="RETORNOS" and l['status']!='retorno_futuro': continue
+            if filtro=="VENDAS" and l['status']!='venda_finalizada': continue
             if busca and busca.lower() not in l['nome'].lower() and busca.lower() not in l['banco'].lower(): continue
             lista.append(l)
-        st.caption(f"Mostrando {len(lista)} - CLIQUE PARA LIGAR")
+        st.caption(f"{len(lista)} clientes")
         for lead in lista[:300]:
-            dot = {"pendente":"⚪","atendido":"🟢","nao_atendeu":"🔴","retorno_futuro":"🟠","venda_finalizada":"💰"}[lead['status']]
-            if st.button(f"{dot} {lead['nome'][:22]} • {lead['banco']} • {lead['telefone']}", key=lead['id'], use_container_width=True):
-                st.session_state.selected_id = lead['id']
-
+            dot={"pendente":"⚪","atendido":"🟢","nao_atendeu":"🔴","retorno_futuro":"🟠","venda_finalizada":"💰"}[lead['status']]
+            dur=f" ⏱️{lead.get('duracao_txt','')}" if lead.get('duracao_seg',0)>0 else ""
+            is_sel=lead['id']==st.session_state.selected_id
+            if st.button(f"{'👉 ' if is_sel else ''}{dot} {lead['nome'][:18]} • {lead['banco']}{dur}", key=lead['id'], use_container_width=True, type="primary" if is_sel else "secondary"):
+                st.session_state.selected_id=lead['id']; st.rerun()
     with col_disc:
         if not st.session_state.selected_id:
-            st.info("👈 Clique cliente à esquerda")
+            st.info("👈 Clique cliente")
         else:
-            sel = next((l for l in st.session_state.leads if l['id']==st.session_state.selected_id), None)
+            sel=next((l for l in st.session_state.leads if l['id']==st.session_state.selected_id), None)
             if sel:
-                st.markdown(f"#### 3️⃣ DISCAR • **{sel['nome']}**")
-                st.write(f"{sel['banco']} • {sel['telefone']} • CPF: {sel['cpf']}")
-                numero = ''.join(filter(str.isdigit, sel['telefone']))
-                st.markdown(f'<a href="tel:{numero}" style="display:block;background:linear-gradient(90deg,#00e5ff,#00ff88);color:#000;padding:20px;border-radius:14px;text-align:center;font-weight:900;text-decoration:none;font-size:20px;margin:14px 0">📱 LIGAR AGORA • {sel["telefone"]}</a>', unsafe_allow_html=True)
-                c1,c2,c3,c4 = st.columns(4)
-                if c1.button("✅ ATENDIDO", key=f"at_{sel['id']}", use_container_width=True, type="primary"):
-                    sel['status']='atendido'; sel['tentativas']+=1; salvar_base(); st.rerun()
-                if c2.button("❌ NÃO AT.", key=f"na_{sel['id']}", use_container_width=True):
-                    sel['status']='nao_atendeu'; sel['tentativas']+=1; salvar_base(); st.rerun()
-                if c3.button("🟠 RETORNO", key=f"re_{sel['id']}", use_container_width=True):
-                    sel['status']='retorno_futuro'; sel['tentativas']+=1; salvar_base(); st.rerun()
-                if c4.button("💰 VENDA", key=f"ve_{sel['id']}", use_container_width=True):
-                    sel['status']='venda_finalizada'; sel['tentativas']+=1; salvar_base(); st.balloons(); st.rerun()
+                st.markdown(f"#### 3️⃣ DISCAR • **{sel['nome']}** • {sel['banco']}")
+                em_ligacao=sel['id'] in st.session_state.call_start
+                if not em_ligacao:
+                    if st.button("▶️ INICIAR LIGAÇÃO + CRONÔMETRO", key=f"start_{sel['id']}", type="primary", use_container_width=True):
+                        st.session_state.call_start[sel['id']]=datetime.now(); st.rerun()
+                    numero=''.join(filter(str.isdigit, sel['telefone']))
+                    st.markdown(f'<a href="tel:{numero}" style="display:block;background:#222;color:#00e5ff;padding:12px;border-radius:10px;text-align:center;font-weight:700;text-decoration:none;border:1px solid #00e5ff">📱 LIGAR SEM CRONÔMETRO</a>', unsafe_allow_html=True)
+                else:
+                    inicio=st.session_state.call_start[sel['id']]
+                    decorrido=(datetime.now()-inicio).total_seconds()
+                    st.warning(f"⏱️ EM LIGAÇÃO: {formatar_tempo(decorrido)} • {inicio.strftime('%H:%M:%S')}")
+                    numero=''.join(filter(str.isdigit, sel['telefone']))
+                    st.markdown(f'<a href="tel:{numero}" style="display:block;background:linear-gradient(90deg,#00e5ff,#00ff88);color:#000;padding:18px;border-radius:14px;text-align:center;font-weight:900;text-decoration:none">📱 LIGAR AGORA • {sel["telefone"]} • ⏱️ {formatar_tempo(decorrido)}</a>', unsafe_allow_html=True)
+                    if st.button("🔄 Atualizar tempo", key=f"ref_{sel['id']}"): st.rerun()
 
-st.markdown("#### 4️⃣ RELATÓRIO")
-if st.session_state.leads:
-    if st.button("📊 GERAR RELATÓRIO BRS", type="primary", use_container_width=True):
-        df_export = pd.DataFrame(st.session_state.leads)
-        if not OPENPYXL_OK:
-            st.download_button("⬇️ BAIXAR CSV", df_export.to_csv(index=False).encode('utf-8'), file_name=f"BRS_{datetime.now().strftime('%d%m%Y')}.csv", mime="text/csv", use_container_width=True)
+                def marcar_com_tempo(novo_status):
+                    fim=datetime.now(); duracao=0; inicio_str=""
+                    if sel['id'] in st.session_state.call_start:
+                        inicio=st.session_state.call_start[sel['id']]
+                        duracao=(fim-inicio).total_seconds()
+                        inicio_str=inicio.strftime("%d/%m %H:%M:%S")
+                        del st.session_state.call_start[sel['id']]
+                    sel['status']=novo_status; sel['tentativas']+=1; sel['ultima']=fim.strftime("%d/%m %H:%M")
+                    sel['duracao_seg']=int(duracao); sel['duracao_txt']=formatar_tempo(duracao); sel['inicio_lig']=inicio_str; sel['fim_lig']=fim.strftime("%d/%m %H:%M:%S")
+                    salvar_base()
+                    if st.session_state.auto_next:
+                        st.session_state.selected_id=proximo_pendente(sel['id'])
+                        st.toast(f"✅ {novo_status} • ⏱️ {formatar_tempo(duracao)} • ⏭️", icon="⏭️")
+                    st.rerun()
+                c1,c2,c3,c4=st.columns(4)
+                with c1:
+                    if st.button("✅ ATENDEU", key=f"at_{sel['id']}", use_container_width=True, type="primary"): marcar_com_tempo('atendido')
+                with c2:
+                    if st.button("❌ NÃO AT.", key=f"na_{sel['id']}", use_container_width=True): marcar_com_tempo('nao_atendeu')
+                with c3:
+                    if st.button("🟠 RETORNO", key=f"re_{sel['id']}", use_container_width=True): marcar_com_tempo('retorno_futuro')
+                with c4:
+                    if st.button("💰 VENDA", key=f"ve_{sel['id']}", use_container_width=True): st.balloons(); marcar_com_tempo('venda_finalizada')
+
+# 4️⃣ RELATÓRIO COM RANKING BANCOS
+st.markdown("#### 4️⃣ RELATÓRIO + 🏆 RANKING BANCOS")
+
+if not st.session_state.leads:
+    st.info("Importe para gerar relatório")
+else:
+    df_all = pd.DataFrame(st.session_state.leads)
+    
+    # Calcula ranking bancos
+    ranking_lig = df_all[df_all['status']!='pendente'].groupby('banco').size().reset_index(name='TOTAL LIGAÇÕES').sort_values('TOTAL LIGAÇÕES', ascending=False)
+    ranking_vendas = df_all[df_all['status']=='venda_finalizada'].groupby('banco').size().reset_index(name='VENDAS').sort_values('VENDAS', ascending=False)
+    ranking_atendeu = df_all[df_all['status']=='atendido'].groupby('banco').size().reset_index(name='ATENDIDOS').sort_values('ATENDIDOS', ascending=False)
+    ranking_tempo = df_all.groupby('banco')['duracao_seg'].sum().reset_index().rename(columns={'duracao_seg':'TEMPO_TOTAL_SEG'})
+    ranking_tempo['TEMPO_TOTAL']=ranking_tempo['TEMPO_TOTAL_SEG'].apply(formatar_tempo)
+    ranking_tempo = ranking_tempo.sort_values('TEMPO_TOTAL_SEG', ascending=False)
+    
+    # Merge completo ranking
+    ranking_completo = pd.merge(ranking_lig, ranking_vendas, on='banco', how='outer').fillna(0)
+    ranking_completo = pd.merge(ranking_completo, ranking_atendeu, on='banco', how='outer').fillna(0)
+    ranking_completo = pd.merge(ranking_completo, ranking_tempo[['banco','TEMPO_TOTAL','TEMPO_TOTAL_SEG']], on='banco', how='outer').fillna(0)
+    # Taxa conversão
+    ranking_completo['TAXA CONVERSÃO %'] = (ranking_completo['VENDAS'] / ranking_completo['TOTAL LIGAÇÕES'] * 100).round(1)
+    ranking_completo = ranking_completo.sort_values('TOTAL LIGAÇÕES', ascending=False)
+    
+    # Mostra ranking visual
+    col_rank1, col_rank2 = st.columns(2)
+    with col_rank1:
+        st.markdown("##### 🏆 RANKING - MAIS LIGAÇÕES POR BANCO")
+        st.dataframe(ranking_lig.head(10), use_container_width=True, hide_index=True)
+        st.bar_chart(ranking_lig.set_index('banco').head(10))
+        
+        st.markdown("##### 💰 RANKING - MAIS VENDAS POR BANCO")
+        if len(ranking_vendas)>0:
+            st.dataframe(ranking_vendas.head(10), use_container_width=True, hide_index=True)
+            st.bar_chart(ranking_vendas.set_index('banco').head(10))
         else:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_export.to_excel(writer, sheet_name='GERAL', index=False)
-                df_export[df_export['status']=='pendente'].to_excel(writer, sheet_name='PENDENTES_FALTA_LIGAR', index=False)
-                df_export[df_export['status']=='atendido'].to_excel(writer, sheet_name='ATENDIDOS', index=False)
-                df_export[df_export['status']=='nao_atendeu'].to_excel(writer, sheet_name='NAO_ATENDIDOS', index=False)
-                df_export[df_export['status']=='venda_finalizada'].to_excel(writer, sheet_name='VENDAS', index=False)
-            st.download_button("⬇️ BAIXAR EXCEL 5 ABAS", output.getvalue(), file_name=f"BRS_{datetime.now().strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+            st.info("Nenhuma venda ainda")
+    
+    with col_rank2:
+        st.markdown("##### ⏱️ RANKING - MAIS TEMPO EM LIGAÇÃO POR BANCO")
+        st.dataframe(ranking_tempo[['banco','TEMPO_TOTAL','TEMPO_TOTAL_SEG']].head(10), use_container_width=True, hide_index=True)
+        
+        st.markdown("##### 📊 RANKING COMPLETO - LIGAÇÕES x VENDAS x CONVERSÃO")
+        st.dataframe(ranking_completo[['banco','TOTAL LIGAÇÕES','VENDAS','ATENDIDOS','TEMPO_TOTAL','TAXA CONVERSÃO %']].head(15), use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    col_filtro_rep, col_gerar = st.columns([1,2])
+    with col_filtro_rep:
+        tipo_rel = st.selectbox("Tipo relatório:", ["COMPLETO + RANKING BANCOS", "SÓ ATENDIDOS", "SÓ NÃO ATENDEU", "SÓ VENDAS", "SÓ RETORNOS", "SÓ PENDENTES", "RESUMO + RANKING"], index=0)
+    with col_gerar:
+        if st.button("📊 GERAR EXCEL COM RANKING BANCOS", type="primary", use_container_width=True):
+            df_filtrado = df_all
+            if "ATENDIDOS" in tipo_rel: df_filtrado = df_all[df_all['status']=='atendido']
+            elif "NÃO ATENDEU" in tipo_rel: df_filtrado = df_all[df_all['status']=='nao_atendeu']
+            elif "VENDAS" in tipo_rel: df_filtrado = df_all[df_all['status']=='venda_finalizada']
+            elif "RETORNOS" in tipo_rel: df_filtrado = df_all[df_all['status']=='retorno_futuro']
+            elif "PENDENTES" in tipo_rel: df_filtrado = df_all[df_all['status']=='pendente']
+            
+            st.success(f"✅ {tipo_rel}: {len(df_filtrado)} registros")
+            
+            if not OPENPYXL_OK:
+                st.download_button("⬇️ CSV", df_filtrado.to_csv(index=False).encode('utf-8'), file_name=f"BRS_{tipo_rel}_{datetime.now().strftime('%d%m%Y')}.csv", mime="text/csv", use_container_width=True)
+            else:
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_all.to_excel(writer, sheet_name='GERAL_TODOS', index=False)
+                    df_filtrado.to_excel(writer, sheet_name=tipo_rel[:30], index=False)
+                    # Abas por tipo
+                    df_all[df_all['status']=='pendente'].to_excel(writer, sheet_name='PENDENTES', index=False)
+                    df_all[df_all['status']=='atendido'].to_excel(writer, sheet_name='ATENDIDOS', index=False)
+                    df_all[df_all['status']=='nao_atendeu'].to_excel(writer, sheet_name='NAO_ATENDEU', index=False)
+                    df_all[df_all['status']=='venda_finalizada'].to_excel(writer, sheet_name='VENDAS', index=False)
+                    df_all[df_all['status']=='retorno_futuro'].to_excel(writer, sheet_name='RETORNOS', index=False)
+                    # RANKING BANCOS - NOVO
+                    ranking_completo.to_excel(writer, sheet_name='RANKING_BANCOS', index=False)
+                    ranking_lig.to_excel(writer, sheet_name='RANK_LIGACOES', index=False)
+                    ranking_vendas.to_excel(writer, sheet_name='RANK_VENDAS', index=False)
+                    ranking_tempo.to_excel(writer, sheet_name='RANK_TEMPO', index=False)
+                    
+                    # Resumo
+                    resumo = []
+                    for status in ['pendente','atendido','nao_atendeu','retorno_futuro','venda_finalizada']:
+                        f = df_all[df_all['status']==status]
+                        resumo.append({"STATUS":status,"QTD":len(f),"TEMPO_TOTAL":formatar_tempo(f['duracao_seg'].sum())})
+                    pd.DataFrame(resumo).to_excel(writer, sheet_name='RESUMO', index=False)
+                
+                st.download_button(f"⬇️ BAIXAR EXCEL COMPLETO COM RANKING BANCOS - 10 ABAS", output.getvalue(), file_name=f"BRS_RANKING_BANCOS_{datetime.now().strftime('%d%m%Y_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+            
+            # Preview ranking
+            st.markdown("##### Prévia Ranking Completo:")
+            st.dataframe(ranking_completo.head(10), use_container_width=True, hide_index=True)
