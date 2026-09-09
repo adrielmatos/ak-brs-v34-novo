@@ -342,12 +342,19 @@
       "telefone": "41989343247",
       "banco": "BMG",
       "produto": "FGTS",
-      "status": "pendente",
+      "status": "arquivado",
       "tentativas": 0,
-      "ultima": "Nunca",
+      "ultima": "09/09 03:28",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09 03:28:54",
+          "acao": "arquivado",
+          "tempo": "00:00",
+          "tab": "Já foi ligado - ocultar da lista"
+        }
+      ],
       "tabulacao": "",
       "observacao": "",
       "canal": "chip",
@@ -357,7 +364,7 @@
       "data_import": "09/09 02:48",
       "ddd": "41",
       "notas_cliente": "",
-      "arquivado_motivo": "",
+      "arquivado_motivo": "Já foi ligado - ocultar da lista",
       "retorno_hora": ""
     },
     {
