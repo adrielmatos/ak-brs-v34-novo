@@ -36,17 +36,24 @@
       "telefone": "21987557580",
       "banco": "OLÉ",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "retorno_futuro",
+      "tentativas": 1,
+      "ultima": "09/09 02:50",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
+      "historico": [
+        {
+          "data": "09/09 02:50:55",
+          "acao": "retorno_futuro",
+          "tempo": "00:00",
+          "tab": "Retornar amanhã"
+        }
+      ],
+      "tabulacao": "Retornar amanhã",
+      "observacao": "Retornar amanhã",
       "canal": "chip",
       "custo_estimado": 0.0,
-      "retorno_data": null,
+      "retorno_data": "10/09/2026",
       "lote": "BRS-PAN-150-Leads-TESTE.xlsx",
       "data_import": "09/09 02:48",
       "ddd": "21"
