@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-APP_VERSION = "4.0"
+APP_VERSION = "5.0"
 LOCAL_FILE = "brs_dados_local.json"
 DELETED_FILE = "brs_excluidos_local.json"
 GITHUB_PATH = "brs_dados.json"
@@ -414,7 +414,14 @@ def load_json_local():
 
 def carregar_dados():
     if not GITHUB_API:
-        return migrate_data(load_json_local())
+        data = load_json_local()
+        if not data.get("excluidos") and os.path.exists(DELETED_FILE):
+            try:
+                with open(DELETED_FILE, "r", encoding="utf-8") as file:
+                    data["excluidos"] = json.load(file)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return migrate_data(data)
 
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -450,6 +457,7 @@ def salvar_dados():
         "lotes": st.session_state.get("lotes", []),
         "nao_perturbe": st.session_state.get("nao_perturbe", []),
         "meta_diaria": safe_int(st.session_state.get("meta_diaria", 20), 20),
+        "excluidos": st.session_state.get("excluidos", []),
         "atualizado_em": now_full(),
     }
 
@@ -459,6 +467,8 @@ def salvar_dados():
         try:
             with open(LOCAL_FILE, "w", encoding="utf-8") as file:
                 file.write(text)
+            with open(DELETED_FILE, "w", encoding="utf-8") as file:
+                json.dump(st.session_state.get("excluidos", []), file, ensure_ascii=False, indent=2)
             return True
         except OSError as exc:
             st.error(f"Falha ao salvar localmente: {exc}")
@@ -486,6 +496,8 @@ def salvar_dados():
         # Cópia local de segurança.
         with open(LOCAL_FILE, "w", encoding="utf-8") as file:
             file.write(text)
+        with open(DELETED_FILE, "w", encoding="utf-8") as file:
+            json.dump(st.session_state.get("excluidos", []), file, ensure_ascii=False, indent=2)
         return True
 
     except (requests.RequestException, OSError, ValueError) as exc:
@@ -493,6 +505,8 @@ def salvar_dados():
         try:
             with open(LOCAL_FILE, "w", encoding="utf-8") as file:
                 file.write(text)
+            with open(DELETED_FILE, "w", encoding="utf-8") as file:
+                json.dump(st.session_state.get("excluidos", []), file, ensure_ascii=False, indent=2)
         except OSError:
             pass
         st.warning(f"GitHub indisponível; cópia local preservada. {exc}")
@@ -570,6 +584,17 @@ if "filtro_ddd" not in st.session_state:
     st.session_state.filtro_ddd = "TODOS"
 if "ordenar_por" not in st.session_state:
     st.session_state.ordenar_por = "NUNCA LIGADOS PRIMEIRO"
+# Estados que podem faltar em sessões antigas / hot reload.
+if "meta_diaria" not in st.session_state:
+    st.session_state.meta_diaria = 20
+if "excluidos" not in st.session_state:
+    st.session_state.excluidos = []
+if "blocklist" not in st.session_state:
+    st.session_state.blocklist = set()
+if "lotes" not in st.session_state:
+    st.session_state.lotes = []
+if "nao_perturbe" not in st.session_state:
+    st.session_state.nao_perturbe = []
 
 # Re-migração defensiva: evita KeyError quando a base vier de versões antigas.
 st.session_state.leads = [
@@ -759,35 +784,97 @@ for col, (icon, label, value, target) in zip(cols, kpis):
             st.session_state.dashboard_view = target
             st.rerun()
 
+def _select_lead_from_card(lead_id, view):
+    st.session_state.selected_id = lead_id
+    st.session_state.dashboard_view = view
+    st.rerun()
+
+
 def render_kpi_panel(target):
     titles = {
-        "todos": "📱 Todos os leads", "pendentes": "📥 Leads pendentes", "nunca": "🆕 Nunca ligados",
-        "atendidos": "✅ Leads atendidos", "vendas": "💰 Central de vendas", "retornos": "⏰ Retornos agendados",
-        "arquivados": "📁 Leads arquivados", "excluidos": "🗑️ Leads excluídos",
+        "todos": "📱 Todos os leads",
+        "pendentes": "📥 Leads pendentes",
+        "nunca": "🆕 Nunca ligados",
+        "atendidos": "✅ Leads atendidos",
+        "vendas": "💰 Central de vendas",
+        "retornos": "⏰ Retornos agendados",
+        "arquivados": "📁 Leads arquivados",
+        "excluidos": "🗑️ Leads excluídos",
     }
-    if target not in titles:
-        return
-    st.markdown(f"## {titles[target]}")
+    st.markdown(f"## {titles.get(target, '📱 Leads')}")
+
     if target == "excluidos":
         items = list(st.session_state.get("excluidos", []))
         if not items:
             st.info("Nenhum contato foi excluído da base.")
             return
-        for lead in items[:100]:
-            st.markdown(f"<div class='card' style='margin-bottom:8px;'><b>🗑️ {html.escape(lead.get('nome',''))}</b><br><span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • {html.escape(lead.get('banco',''))} • Excluído em {html.escape(lead.get('excluido_em','—'))}</span><br><span class='small-muted'>Motivo: {html.escape(lead.get('excluido_motivo','Excluído da base'))}</span></div>", unsafe_allow_html=True)
+        ex_search = st.text_input("Pesquisar excluídos", placeholder="Nome ou telefone", key="kpi_ex_search")
+        filtered = [x for x in items if ex_search.lower() in f"{x.get('nome','')} {x.get('telefone','')}".lower()]
+        st.caption(f"{len(filtered)} contato(s) encontrado(s) • protegidos contra reimportação automática")
+        for lead in filtered[:100]:
+            st.markdown(
+                f"<div class='card' style='margin-bottom:6px;'>"
+                f"<b>🗑️ {html.escape(lead.get('nome',''))}</b><br>"
+                f"<span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • "
+                f"{html.escape(lead.get('banco',''))} • Excluído em {html.escape(lead.get('excluido_em','—'))}</span>"
+                f"</div>", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("♻️ Restaurar", key=f"kpi_restore_{lead['id']}", use_container_width=True, type="primary"):
+                    restored = dict(lead)
+                    restored.pop("excluido_em", None)
+                    restored.pop("excluido_motivo", None)
+                    restored["status"] = "pendente"
+                    # Evita duplicar caso o contato tenha sido restaurado de outra forma.
+                    if not any(x.get("id") == restored.get("id") for x in st.session_state.leads):
+                        st.session_state.leads.append(default_lead(restored))
+                    st.session_state.excluidos = [x for x in st.session_state.excluidos if x.get("id") != lead.get("id")]
+                    salvar_dados()
+                    st.session_state.dashboard_view = "discador"
+                    st.session_state.selected_id = restored.get("id")
+                    st.rerun()
+            with c2:
+                if st.button("❌ Apagar histórico", key=f"kpi_purge_{lead['id']}", use_container_width=True):
+                    st.session_state.excluidos = [x for x in st.session_state.excluidos if x.get("id") != lead.get("id")]
+                    salvar_dados()
+                    st.rerun()
         return
-    mapping = {
-        "todos": lambda x: True, "pendentes": lambda x: x.get("status") == "pendente",
+
+    predicates = {
+        "todos": lambda x: True,
+        "pendentes": lambda x: x.get("status") == "pendente",
         "nunca": lambda x: x.get("status") == "pendente" and x.get("ultima") == "Nunca",
-        "atendidos": lambda x: x.get("status") == "atendido", "vendas": lambda x: x.get("status") == "venda_finalizada",
-        "retornos": lambda x: x.get("status") == "retorno_futuro", "arquivados": lambda x: x.get("status") == "arquivado",
+        "atendidos": lambda x: x.get("status") == "atendido",
+        "vendas": lambda x: x.get("status") == "venda_finalizada",
+        "retornos": lambda x: x.get("status") == "retorno_futuro",
+        "arquivados": lambda x: x.get("status") == "arquivado",
     }
-    items = [x for x in st.session_state.leads if mapping[target](x)]
+    items = [x for x in st.session_state.leads if predicates.get(target, lambda x: True)(x)]
     if not items:
         st.info("Nenhum lead encontrado.")
         return
+
+    st.caption(f"{len(items)} lead(s) • clique em **Abrir atendimento** para ir direto ao discador")
     for lead in items[:100]:
-        st.markdown(f"<div class='card' style='margin-bottom:8px;'><b>{bank_emoji(lead.get('banco'))} {html.escape(lead.get('nome',''))}</b><br><span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • {html.escape(lead.get('banco',''))} • {html.escape(status_label(lead.get('status')))}</span></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='card' style='margin-bottom:6px;'>"
+            f"<b>{bank_emoji(lead.get('banco'))} {html.escape(lead.get('nome',''))}</b>"
+            f"<br><span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • "
+            f"{html.escape(lead.get('banco',''))} • {html.escape(status_label(lead.get('status')))}"
+            f" • Tentativas: {safe_int(lead.get('tentativas'))}</span></div>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1.2, 1, 1])
+        with c1:
+            if st.button("📞 Abrir atendimento", key=f"kpi_open_{target}_{lead['id']}", use_container_width=True, type="primary"):
+                _select_lead_from_card(lead["id"], "discador")
+        with c2:
+            if lead.get("telefone"):
+                st.link_button("📱 Ligar", f"tel:{normalize_digits(lead.get('telefone'))}", use_container_width=True)
+        with c3:
+            d = normalize_digits(lead.get("telefone"))
+            if len(d) in (10, 11):
+                st.link_button("💬 WhatsApp", f"https://wa.me/55{d}", use_container_width=True)
+            else:
+                st.button("💬 WhatsApp", disabled=True, use_container_width=True)
 
 render_kpi_panel(st.session_state.dashboard_view)
 st.divider()
@@ -905,7 +992,7 @@ with st.sidebar:
         "🎯 Meta diária de vendas",
         min_value=1,
         max_value=1000,
-        value=safe_int(st.session_state.meta_diaria, 20),
+        value=safe_int(st.session_state.get("meta_diaria", 20), 20),
         key="meta_diaria",
     )
 
@@ -1257,29 +1344,92 @@ with tab_arq:
 
 # ============================================================
 def read_uploaded_table(uploaded):
-    name = uploaded.name.lower()
+    """Leitor universal de tabelas.
+
+    Não depende apenas da extensão: tenta identificar o formato e, quando
+    possível, testa os leitores disponíveis até encontrar uma leitura válida.
+    """
+    name = clean_text(getattr(uploaded, "name", "")).lower()
     ext = os.path.splitext(name)[1]
-    if ext in {".csv", ".txt", ".tsv"}:
+
+    # Arquivos de texto: tenta delimitadores e codificações comuns.
+    if ext in {".csv", ".txt", ".tsv", ".tab"} or not ext:
         last_error = None
-        for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+        encodings = ("utf-8-sig", "utf-8", "cp1252", "latin1")
+        seps = ["\t", ";", ",", "|"]
+        if ext in {".tsv", ".tab"}:
+            seps = ["\t", ";", ",", "|"]
+        for encoding in encodings:
+            for sep in seps:
+                uploaded.seek(0)
+                try:
+                    df = pd.read_csv(
+                        uploaded,
+                        sep=sep,
+                        engine="python",
+                        dtype=str,
+                        keep_default_na=False,
+                        encoding=encoding,
+                    )
+                    if len(df.columns) >= 1 and (len(df) > 0 or len(df.columns) > 1):
+                        return df.fillna("")
+                except Exception as exc:
+                    last_error = exc
             uploaded.seek(0)
             try:
-                return pd.read_csv(uploaded, sep="\t" if ext == ".tsv" else None, engine="python", dtype=str, keep_default_na=False)
+                df = pd.read_csv(
+                    uploaded,
+                    sep=None,
+                    engine="python",
+                    dtype=str,
+                    keep_default_na=False,
+                    encoding=encoding,
+                )
+                return df.fillna("")
             except Exception as exc:
                 last_error = exc
-        raise ValueError(f"Arquivo de texto não reconhecido: {last_error}")
-    engines = {".xlsx":["openpyxl"], ".xlsm":["openpyxl"], ".xltx":["openpyxl"], ".xltm":["openpyxl"], ".xls":["xlrd"], ".xlsb":["pyxlsb"], ".ods":["odf"], ".fods":["odf"]}.get(ext)
-    if not engines:
-        uploaded.seek(0)
-        return pd.read_excel(uploaded, dtype=str).fillna("")
-    last_error = None
-    for engine in engines:
+        raise RuntimeError(f"Não foi possível ler o arquivo de texto. Detalhes: {last_error}")
+
+    # Leitores Excel/ODS. Testa mais de um motor quando aplicável.
+    candidates = []
+    if ext in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+        candidates = ["openpyxl"]
+    elif ext == ".xls":
+        candidates = ["xlrd"]
+    elif ext == ".xlsb":
+        candidates = ["pyxlsb"]
+    elif ext in {".ods", ".fods"}:
+        candidates = ["odf"]
+    else:
+        # Formato desconhecido: tenta Excel moderno, binário, ODS e texto.
+        candidates = ["openpyxl", "xlrd", "pyxlsb", "odf"]
+
+    errors = []
+    for engine in candidates:
         uploaded.seek(0)
         try:
-            return pd.read_excel(uploaded, engine=engine, dtype=str).fillna("")
-        except (ImportError, ValueError, OSError) as exc:
-            last_error = exc
-    raise RuntimeError(f"Não foi possível abrir {ext}. Instale o leitor correspondente ou verifique o arquivo. Detalhes: {last_error}")
+            df = pd.read_excel(uploaded, engine=engine, dtype=str, sheet_name=0)
+            return df.fillna("")
+        except Exception as exc:
+            errors.append(f"{engine}: {exc}")
+
+    # Último recurso: tenta tratar como CSV, mesmo sem extensão correta.
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+        uploaded.seek(0)
+        try:
+            df = pd.read_csv(
+                uploaded, sep=None, engine="python", dtype=str,
+                keep_default_na=False, encoding=encoding,
+            )
+            return df.fillna("")
+        except Exception as exc:
+            errors.append(f"csv/{encoding}: {exc}")
+
+    raise RuntimeError(
+        "Formato de planilha não reconhecido. O sistema tentou Excel moderno, "
+        "Excel legado, XLSB, ODS e CSV. " + " | ".join(errors[-6:])
+    )
+
 
 def normalize_column_name(value):
     text = clean_text(value).lower()
@@ -1288,7 +1438,10 @@ def normalize_column_name(value):
     aliases = {
         "nome completo":"nome", "cliente":"nome", "cliente nome":"nome", "name":"nome",
         "celular":"telefone", "fone":"telefone", "telefone 1":"telefone", "phone":"telefone", "whatsapp":"telefone", "numero":"telefone", "número":"telefone",
-        "instituicao":"banco", "instituição":"banco", "banco atual":"banco", "bank":"banco",
+        "instituicao":"banco", "instituição":"banco", "banco atual":"banco", "banco":"banco", "bank":"banco",
+        "nome do cliente":"nome", "nome cliente":"nome", "beneficiario":"nome", "beneficiário":"nome",
+        "contato":"telefone", "telefone celular":"telefone", "fone celular":"telefone", "mobile":"telefone",
+        "instituição financeira":"banco", "instituicao financeira":"banco", "financeira":"banco",
     }
     return aliases.get(text, text)
 
@@ -1382,7 +1535,7 @@ with tab_lotes:
         )
         uploaded = st.file_uploader(
             "Escolha o arquivo",
-            type=["csv", "txt", "tsv", "xlsx", "xls", "xlsm", "xltx", "xltm", "xlsb", "ods", "fods"],
+            type=None,
             key="lead_uploader",
         )
 
