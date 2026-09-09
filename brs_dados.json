@@ -3757,16 +3757,22 @@
       "telefone": "11997233940",
       "banco": "WILL",
       "lote": "teste",
-      "status": "pendente",
+      "status": "retorno_futuro",
       "id": "lead_20260909153259655825_92",
       "ddd": "11",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "tentativas": 1,
+      "ultima": "09/09 15:34",
       "notas_cliente": "",
-      "observacao": "",
-      "retorno_hora": "",
+      "observacao": "ligar esse horario",
+      "retorno_hora": "24/09/2026 15:33",
       "arquivado_motivo": "",
-      "historico": []
+      "historico": [
+        {
+          "data": "09/09/2026 15:34:10",
+          "acao": "retorno_futuro",
+          "texto": "ligar esse horario"
+        }
+      ]
     }
   ],
   "bloqueados": [],
@@ -3791,5 +3797,5 @@
   "nao_perturbe": [],
   "meta_diaria": 20,
   "excluidos": [],
-  "atualizado_em": "09/09/2026 15:32:59"
+  "atualizado_em": "09/09/2026 15:34:10"
 }
