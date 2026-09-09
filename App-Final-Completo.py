@@ -409,4 +409,4 @@ def mostrar_detalhes_lead(sel):
     st.markdown("**📝 Observações**")
     notas = st.text_area("Obs", value=sel.get("notas_cliente", ""), placeholder="Ex: Tem 2 cartões", key=f"notas_{sel['id']}_det", label_visibility="collapsed", height=80)
     if st.button("💾 Salvar Obs", key=f"save_obs_{sel['id']}_det", use_container_width=True):
-  
+   
