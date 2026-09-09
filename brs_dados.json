@@ -2184,8 +2184,8 @@
       "telefone": "31987454489",
       "banco": "C6 BANK",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 1,
+      "status": "nao_atendeu",
+      "tentativas": 2,
       "ultima": "09/09 15:43",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
@@ -2194,10 +2194,15 @@
           "data": "09/09/2026 15:43:29",
           "acao": "atendimento_iniciado",
           "texto": "Atendimento iniciado"
+        },
+        {
+          "data": "09/09/2026 15:43:43",
+          "acao": "nao_atendeu",
+          "texto": "Não atendeu"
         }
       ],
       "tabulacao": "",
-      "observacao": "",
+      "observacao": "Não atendeu",
       "notas_cliente": "",
       "arquivado_motivo": "",
       "retorno_hora": "",
@@ -3808,5 +3813,5 @@
       "excluido_motivo": "Excluído manualmente"
     }
   ],
-  "atualizado_em": "09/09/2026 15:43:29"
+  "atualizado_em": "09/09/2026 15:43:43"
 }
