@@ -574,6 +574,8 @@ if "filtro_ddd" not in st.session_state:
     st.session_state.filtro_ddd = "TODOS"
 if "ordenar_por" not in st.session_state:
     st.session_state.ordenar_por = "NUNCA LIGADOS PRIMEIRO"
+if "somente_nunca" not in st.session_state:
+    st.session_state.somente_nunca = False
 
 # Re-migração defensiva: evita KeyError quando a base vier de versões antigas.
 st.session_state.leads = [
@@ -658,6 +660,10 @@ def filtrar_lista(status_filtro):
 
         if not status_ok:
             continue
+
+        if st.session_state.get("somente_nunca", False):
+            if not (status == "pendente" and lead.get("ultima") == "Nunca"):
+                continue
 
         bank = clean_text(lead.get("banco")).upper()
         if st.session_state.filtro_banco != "TODOS" and bank != st.session_state.filtro_banco:
@@ -746,14 +752,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+def _kpi_button(container, label, value, filtro=None, somente_nunca=False):
+    with container:
+        if st.button(f"{label}\n{value}", key=f"kpi_{label}", width="stretch"):
+            st.session_state.filtro_status = filtro or "TODOS"
+            st.session_state.somente_nunca = somente_nunca
+            st.session_state.selected_id = None
+            st.rerun()
+
 m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-m1.metric("Total", total)
-m2.metric("Pendentes", pendentes)
-m3.metric("Nunca", nunca)
-m4.metric("Atendidos", atendidos)
-m5.metric("Vendas", vendas)
-m6.metric("Retornos", retornos)
-m7.metric("Arquivados", arquivados)
+_kpi_button(m1, "Total", total, "TODOS")
+_kpi_button(m2, "Pendentes", pendentes, "PENDENTES")
+_kpi_button(m3, "Nunca", nunca, "PENDENTES", True)
+_kpi_button(m4, "Atendidos", atendidos, "ATENDIDOS")
+_kpi_button(m5, "Vendas", vendas, "VENDAS")
+_kpi_button(m6, "Retornos", retornos, "RETORNOS")
+_kpi_button(m7, "Arquivados", arquivados, "ARQUIVADOS")
 
 
 # ============================================================
@@ -859,6 +873,7 @@ with st.sidebar:
         st.session_state.filtro_status = "PENDENTES"
         st.session_state.filtro_ddd = "TODOS"
         st.session_state.ordenar_por = "NUNCA LIGADOS PRIMEIRO"
+        st.session_state.somente_nunca = False
         st.session_state.selected_id = None
         st.rerun()
 
@@ -1313,106 +1328,118 @@ with tab_lotes:
             ["SEM LOTE"] + [clean_text(x.get("nome")) for x in st.session_state.lotes],
         )
         uploaded = st.file_uploader(
-            "Escolha o arquivo",
+            "Escolha uma ou várias planilhas",
             type=["csv", "txt", "tsv", "xlsx", "xls", "xlsm", "xltx", "xltm", "xlsb", "ods", "fods"],
+            accept_multiple_files=True,
             key="lead_uploader",
         )
 
         if uploaded:
             try:
-                ext = os.path.splitext(uploaded.name.lower())[1]
-                if ext in {".csv", ".txt", ".tsv"}:
-                    last_error = None
-                    preview_df = None
-                    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
-                        try:
-                            uploaded.seek(0)
-                            preview_df = pd.read_csv(uploaded, sep="\t" if ext == ".tsv" else None, engine="python", dtype=str, encoding=enc).fillna("")
-                            break
-                        except Exception as exc:
-                            last_error = exc
-                    if preview_df is None:
-                        raise ValueError(f"Arquivo de texto não reconhecido: {last_error}")
-                else:
-                    engines = {".xlsx":"openpyxl", ".xlsm":"openpyxl", ".xltx":"openpyxl", ".xltm":"openpyxl", ".xls":"xlrd", ".xlsb":"pyxlsb", ".ods":"odf", ".fods":"odf"}
-                    engine = engines.get(ext)
-                    uploaded.seek(0)
-                    preview_df = pd.read_excel(uploaded, engine=engine, dtype=str).fillna("")
+                engines = {
+                    ".xlsx": "openpyxl", ".xlsm": "openpyxl", ".xltx": "openpyxl", ".xltm": "openpyxl",
+                    ".xls": "xlrd", ".xlsb": "pyxlsb", ".ods": "odf", ".fods": "odf",
+                }
 
-                st.dataframe(preview_df.head(20), width='stretch', hide_index=True)
-                st.caption(f"{len(preview_df)} linha(s) lida(s).")
+                def read_uploaded_file(file):
+                    ext = os.path.splitext(file.name.lower())[1]
+                    file.seek(0)
+                    if ext in {".csv", ".txt", ".tsv"}:
+                        last_error = None
+                        for enc in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+                            try:
+                                file.seek(0)
+                                return pd.read_csv(
+                                    file,
+                                    sep="\t" if ext == ".tsv" else None,
+                                    engine="python",
+                                    dtype=str,
+                                    encoding=enc,
+                                ).fillna("")
+                            except Exception as exc:
+                                last_error = exc
+                        raise ValueError(f"arquivo de texto não reconhecido: {last_error}")
+                    if ext not in engines:
+                        raise ValueError(f"formato não suportado: {ext or 'sem extensão'}")
+                    return pd.read_excel(file, engine=engines[ext], dtype=str).fillna("")
 
-                if st.button("✅ Importar agora", key="import_leads", width='stretch', type="primary"):
-                    normalized_columns = {
-                        clean_text(col).lower(): col for col in preview_df.columns
-                    }
+                dataframes = []
+                erros = []
+                for file in uploaded:
+                    try:
+                        df_file = read_uploaded_file(file)
+                        dataframes.append((file.name, df_file))
+                    except Exception as exc:
+                        erros.append(f"{file.name}: {exc}")
 
-                    def col_value(row, keys):
-                        for key in keys:
-                            original = normalized_columns.get(key)
-                            if original is not None:
-                                return clean_text(row.get(original))
-                        return ""
+                if dataframes:
+                    total_linhas = sum(len(df) for _, df in dataframes)
+                    st.success(f"{len(dataframes)} arquivo(s) lido(s) • {total_linhas} linha(s) encontradas.")
+                    for fname, df_file in dataframes:
+                        with st.expander(f"📄 {fname} • {len(df_file)} linha(s)", expanded=len(dataframes) == 1):
+                            st.dataframe(df_file.head(20), width="stretch", hide_index=True)
 
-                    imported = []
-                    for idx, (_, row) in enumerate(preview_df.iterrows()):
-                        nome = col_value(row, ["nome", "name", "cliente"])
-                        telefone = col_value(row, ["telefone", "phone", "celular", "whatsapp"])
-                        banco = col_value(row, ["banco", "bank"])
-                        lote = col_value(row, ["lote"])
+                    if erros:
+                        st.warning("Alguns arquivos não puderam ser lidos: " + " | ".join(erros))
 
-                        if not nome and not telefone:
-                            continue
+                    if st.button("✅ Importar todos os arquivos", key="import_leads_multi", width="stretch", type="primary"):
+                        imported = []
+                        total_duplicados = 0
+                        total_sem_dados = 0
 
-                        lead = default_lead(
-                            {
-                                "nome": nome or f"Lead importado {idx + 1}",
-                                "telefone": telefone,
-                                "banco": banco or "NÃO INFORMADO",
-                                "lote": lote or ("" if selected_lote == "SEM LOTE" else selected_lote),
-                                "status": "pendente",
-                            },
-                            idx,
-                        )
-                        imported.append(lead)
+                        for fname, preview_df in dataframes:
+                            normalized_columns = {clean_text(col).lower(): col for col in preview_df.columns}
 
-                    if imported:
-                        existing_phones = {
-                            normalize_digits(x.get("telefone"))
-                            for x in st.session_state.leads
-                            if normalize_digits(x.get("telefone"))
-                        }
-                        deleted_phones = {
-                            normalize_digits(x.get("telefone"))
-                            for x in st.session_state.excluidos
-                            if normalize_digits(x.get("telefone"))
-                        }
-                        unique_imported = []
+                            def col_value(row, keys):
+                                for key in keys:
+                                    original = normalized_columns.get(key)
+                                    if original is not None:
+                                        return clean_text(row.get(original))
+                                return ""
+
+                            for idx, (_, row) in enumerate(preview_df.iterrows()):
+                                nome = col_value(row, ["nome", "name", "cliente", "nome_cliente"])
+                                telefone = col_value(row, ["telefone", "phone", "celular", "whatsapp", "telefone1", "telefone 1"])
+                                banco = col_value(row, ["banco", "bank", "instituicao", "instituição"])
+                                lote = col_value(row, ["lote"])
+                                if not nome and not telefone:
+                                    total_sem_dados += 1
+                                    continue
+                                imported.append(default_lead({
+                                    "nome": nome or f"Lead importado {len(imported) + 1}",
+                                    "telefone": telefone,
+                                    "banco": banco or "NÃO INFORMADO",
+                                    "lote": lote or ("" if selected_lote == "SEM LOTE" else selected_lote),
+                                    "status": "pendente",
+                                }, len(imported)))
+
+                        existing_phones = {normalize_digits(x.get("telefone")) for x in st.session_state.leads if normalize_digits(x.get("telefone"))}
+                        deleted_phones = {normalize_digits(x.get("telefone")) for x in st.session_state.excluidos if normalize_digits(x.get("telefone"))}
                         seen = set()
-                        duplicates = 0
-                        blocked_deleted = 0
+                        unique_imported = []
+                        bloqueados = 0
                         for item in imported:
                             phone = normalize_digits(item.get("telefone"))
                             if phone and phone in deleted_phones:
-                                blocked_deleted += 1
+                                bloqueados += 1
                                 continue
                             if phone and (phone in existing_phones or phone in seen):
-                                duplicates += 1
+                                total_duplicados += 1
                                 continue
                             if phone:
                                 seen.add(phone)
                             unique_imported.append(item)
+
                         st.session_state.leads.extend(unique_imported)
                         salvar_dados()
-                        st.success(
-                            f"{len(unique_imported)} lead(s) importado(s). "
-                            f"{duplicates} duplicado(s) ignorado(s). {blocked_deleted} excluído(s) bloqueado(s)."
-                        )
+                        st.success(f"{len(unique_imported)} lead(s) importado(s) de {len(dataframes)} arquivo(s). {total_duplicados} duplicado(s), {bloqueados} excluído(s) bloqueado(s), {total_sem_dados} linha(s) sem nome/telefone ignorada(s).")
                         st.rerun()
-                    else:
-                        st.warning("Nenhuma linha válida encontrada.")
+                else:
+                    st.error("Nenhum dos arquivos enviados pôde ser lido. Verifique as dependências no requirements.txt.")
+                    if erros:
+                        st.code("\n".join(erros))
             except Exception as exc:
-                st.error(f"Não foi possível ler o arquivo: {exc}")
+                st.error(f"Não foi possível ler os arquivos: {exc}")
 
     st.divider()
     st.markdown("#### ➕ Cadastro manual")
