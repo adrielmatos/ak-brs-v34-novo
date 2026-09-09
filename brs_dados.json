@@ -192,14 +192,22 @@
       "telefone": "47982291929",
       "banco": "SAFRA",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "atendido",
+      "tentativas": 1,
+      "ultima": "09/09 03:29",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
+      "historico": [
+        {
+          "data": "09/09 03:29:11",
+          "acao": "atendido",
+          "tempo": "00:00",
+          "tab": "Atendeu - interessado",
+          "retorno": ""
+        }
+      ],
+      "tabulacao": "Atendeu - interessado",
+      "observacao": "Atendeu - interessado",
       "canal": "chip",
       "custo_estimado": 0.0,
       "retorno_data": null,
