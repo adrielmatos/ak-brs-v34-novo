@@ -14,7 +14,7 @@
       "duracao_txt": "00:00",
       "historico": [],
       "tabulacao": "",
-      "observacao": "Retorno 22/09/2026 14:00 Estava no trabalho ",
+      "observacao": "Retorno 22/09/2026 14:00 Estava no trabalho",
       "notas_cliente": "",
       "arquivado_motivo": "",
       "retorno_hora": "14:00",
@@ -329,7 +329,7 @@
         }
       ],
       "tabulacao": "Retorno 21/09/2026 14:00 - ",
-      "observacao": "Retorno 21/09/2026 14:00 - ",
+      "observacao": "Retorno 21/09/2026 14:00 -",
       "notas_cliente": "",
       "arquivado_motivo": "",
       "retorno_hora": "14:00",
@@ -922,17 +922,23 @@
       "telefone": "81999838553",
       "banco": "FACTA",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "retorno_futuro",
+      "tentativas": 1,
+      "ultima": "09/09 14:17",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09/2026 14:17:56",
+          "acao": "retorno_futuro",
+          "texto": "estava no trabalho"
+        }
+      ],
       "tabulacao": "",
-      "observacao": "",
+      "observacao": "estava no trabalho",
       "notas_cliente": "",
       "arquivado_motivo": "",
-      "retorno_hora": "",
+      "retorno_hora": "19/09/2026 14:47",
       "canal": "chip",
       "custo_estimado": 0.0,
       "retorno_data": null,
@@ -3766,15 +3772,6 @@
       "ddd": "11"
     }
   ],
-  "pausas": [
-    {
-      "tipo": "Pausa",
-      "inicio": "09/09 02:11:05",
-      "fim": "09/09 02:11:07",
-      "duracao_seg": 2,
-      "duracao_txt": "00:02"
-    }
-  ],
   "bloqueados": [],
   "lotes": [
     {
@@ -3797,5 +3794,6 @@
     }
   ],
   "nao_perturbe": [],
-  "meta_diaria": 20
+  "meta_diaria": 20,
+  "atualizado_em": "09/09/2026 14:17:56"
 }
