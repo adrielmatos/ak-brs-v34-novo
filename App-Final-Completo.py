@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import urllib.parse
 from collections import Counter
- 
+
 st.set_page_config(page_title="A&K BRS", layout="wide", page_icon="📱")
- 
+
 # =========================================================
 # CONFIGURAÇÃO GITHUB (usado como banco de dados)
 # =========================================================
@@ -20,11 +20,11 @@ try:
 except Exception:
     st.error("Configuração ausente. Vá em Settings > Secrets no Streamlit Cloud e adicione GITHUB_TOKEN e GITHUB_REPO.")
     st.stop()
- 
+
 GITHUB_PATH = "brs_dados.json"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
- 
+
 # =========================================================
 # LOGIN SIMPLES
 # =========================================================
@@ -43,10 +43,10 @@ def checar_login():
         else:
             st.error("Senha incorreta.")
     return False
- 
+
 if not checar_login():
     st.stop()
- 
+
 # =========================================================
 # PERSISTÊNCIA VIA GITHUB (leads + pausas + bloqueados num único JSON)
 # =========================================================
@@ -63,7 +63,7 @@ def carregar_dados():
     else:
         st.error(f"Erro ao ler dados do GitHub: {r.status_code} — verifique o token e o nome do repositório.")
         return [], [], set()
- 
+
 def salvar_dados():
     payload = {
         "leads": st.session_state.leads,
@@ -83,7 +83,7 @@ def salvar_dados():
         st.session_state["_gh_sha"] = r.json()["content"]["sha"]
     else:
         st.warning(f"Não consegui salvar no GitHub agora (código {r.status_code}). Tente de novo.")
- 
+
 # =========================================================
 # ESTADO INICIAL
 # =========================================================
@@ -101,7 +101,7 @@ if "leads" not in st.session_state:
     st.session_state.pausa_inicio = None
     st.session_state.modo_foco = False
     st.session_state.preview_df = None
- 
+
 # =========================================================
 # FUNÇÕES AUXILIARES
 # =========================================================
@@ -113,7 +113,7 @@ def formatar_tempo(seg):
         h = m // 60; m = m % 60
         return f"{h:02d}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
- 
+
 def proximo_inteligente(atual_id=None):
     pend = [l for l in st.session_state.leads if l["status"] == "pendente"]
     if not pend:
@@ -122,13 +122,13 @@ def proximo_inteligente(atual_id=None):
     for l in st.session_state.leads:
         if l["status"] == "venda_finalizada":
             vendas_por_banco[l["banco"]] = vendas_por_banco.get(l["banco"], 0) + 1
- 
+
     def score(l):
         tent = l.get("tentativas", 0) * 10
         nunca = 0 if l.get("ultima") == "Nunca" else 5
         banco_bonus = -2 if vendas_por_banco.get(l["banco"], 0) >= max(vendas_por_banco.values(), default=0) and vendas_por_banco else 0
         return tent + nunca + banco_bonus
- 
+
     pend_sorted = sorted(pend, key=score)
     if not atual_id:
         return pend_sorted[0]["id"]
@@ -139,7 +139,7 @@ def proximo_inteligente(atual_id=None):
     if idx + 1 < len(ids):
         return ids[idx + 1]
     return pend_sorted[0]["id"] if len(pend_sorted) > 1 else None
- 
+
 def melhor_horario():
     horas = []
     for l in st.session_state.leads:
@@ -155,11 +155,11 @@ def melhor_horario():
     faixa = Counter([h - (h % 2) for h in horas])
     melhor = faixa.most_common(1)[0][0]
     return f"{melhor:02d}h-{melhor+2:02d}h"
- 
+
 def retornos_hoje():
     hoje = datetime.now().strftime("%d/%m/%Y")
     return len([l for l in st.session_state.leads if l.get("status") == "retorno_futuro" and l.get("retorno_data") == hoje])
- 
+
 # =========================================================
 # LEITURA ROBUSTA DE PLANILHA
 # =========================================================
@@ -177,14 +177,14 @@ def ler_planilha(up):
             except Exception:
                 continue
     raise ValueError("Não consegui identificar o formato do CSV automaticamente (encoding/separador).")
- 
+
 def montar_novos_leads(df, existentes, bloqueados):
     df.columns = [str(c).upper().strip() for c in df.columns]
     col_nome = next((c for c in df.columns if "NOME" in c), df.columns[0])
     col_cpf = next((c for c in df.columns if "CPF" in c), None)
     col_tel = next((c for c in df.columns if "TELEFONE" in c or c == "TEL" or "CEL" in c), None)
     col_banco = next((c for c in df.columns if "BANCO" in c), None)
- 
+
     novos, ignorados_tel, ignorados_bloq, ignorados_dup = [], 0, 0, 0
     for idx, row in df.iterrows():
         cpf = str(row.get(col_cpf, "")).strip() if col_cpf else f"semcpf{idx}"
@@ -209,7 +209,7 @@ def montar_novos_leads(df, existentes, bloqueados):
             "observacao": "", "canal": "chip", "custo_estimado": 0.0, "retorno_data": None
         })
     return novos, ignorados_tel, ignorados_bloq, ignorados_dup
- 
+
 # =========================================================
 # ESTILO
 # =========================================================
@@ -224,7 +224,7 @@ z-index:9999;font-size:12px;}
 .alerta-horario {background:#e6f7ee;color:#0a6b3d;}
 </style>
 """, unsafe_allow_html=True)
- 
+
 # =========================================================
 # HEADER
 # =========================================================
@@ -247,14 +247,14 @@ with col_h4:
     if st.button("🔄 Sair", use_container_width=True):
         st.session_state.logado = False
         st.rerun()
- 
+
 ret = retornos_hoje()
 if ret > 0:
     st.markdown(f'<div class="alerta alerta-retorno">⏰ {ret} retorno(s) agendado(s) para hoje</div>', unsafe_allow_html=True)
 mh = melhor_horario()
 if mh:
     st.markdown(f'<div class="alerta alerta-horario">📈 Seu melhor horário de conversão: {mh}</div>', unsafe_allow_html=True)
- 
+
 # =========================================================
 # SIDEBAR
 # =========================================================
@@ -289,21 +289,30 @@ with st.sidebar:
                       "fim": fim.strftime("%d/%m %H:%M:%S"), "duracao_seg": int(duracao), "duracao_txt": formatar_tempo(duracao)})
             salvar_dados()
             st.session_state.em_pausa = None; st.session_state.pausa_inicio = None; st.rerun()
- 
+
 modo_foco_ativo = st.session_state.modo_foco and st.session_state.selected_id in st.session_state.call_start if st.session_state.selected_id else False
- 
+
 # =========================================================
 # IMPORTAÇÃO
 # =========================================================
 if not st.session_state.leads:
-    st.info("📥 Suba sua planilha — aceita .csv, .xlsx e .xls")
-    up = st.file_uploader("Planilha", type=["csv", "xlsx", "xls"], key="import_file")
-    if up and st.session_state.preview_df is None:
-        try:
-            st.session_state.preview_df = ler_planilha(up)
-        except Exception as e:
-            st.error(f"Não consegui ler o arquivo: {e}")
- 
+    st.info("📥 Suba uma ou várias planilhas de uma vez — aceita .csv, .xlsx e .xls")
+    arquivos = st.file_uploader("Planilha(s)", type=["csv", "xlsx", "xls"], key="import_file", accept_multiple_files=True)
+    if arquivos and st.session_state.preview_df is None:
+        dfs, erros = [], []
+        for arq in arquivos:
+            try:
+                df_arq = ler_planilha(arq)
+                df_arq.columns = [str(c).upper().strip() for c in df_arq.columns]
+                dfs.append(df_arq)
+            except Exception as e:
+                erros.append(f"{arq.name}: {e}")
+        if erros:
+            st.error("Alguns arquivos não puderam ser lidos: " + " | ".join(erros))
+        if dfs:
+            st.session_state.preview_df = pd.concat(dfs, ignore_index=True)
+            st.caption(f"{len(dfs)} planilha(s) combinada(s), {len(st.session_state.preview_df)} linhas no total")
+
     if st.session_state.preview_df is not None:
         st.markdown("#### 👀 Prévia (10 primeiras linhas)")
         st.dataframe(st.session_state.preview_df.head(10), use_container_width=True)
@@ -341,7 +350,7 @@ else:
         if busca and busca.lower() not in l["nome"].lower() and busca.lower() not in l["banco"].lower():
             continue
         lista.append(l)
- 
+
     def registrar_evento(sel, status_final, obs_pronta, retorno_data=None):
         fim = datetime.now(); dur = 0
         if sel["id"] in st.session_state.call_start:
@@ -365,7 +374,7 @@ else:
         if st.session_state.auto_next:
             st.session_state.selected_id = proximo_inteligente(sel["id"])
         st.rerun()
- 
+
     if modo_foco_ativo:
         sel = next((l for l in st.session_state.leads if l["id"] == st.session_state.selected_id), None)
         if sel:
@@ -441,7 +450,7 @@ else:
                             st.markdown(f'<a href="tel:{sel["telefone"]}" style="display:block;background:linear-gradient(90deg,#00e5ff,#00ff88);color:#000;padding:18px;border-radius:12px;text-align:center;font-weight:900;text-decoration:none;font-size:20px">📱 {sel["telefone"]} • ⏱️ {formatar_tempo(decorrido)}</a>', unsafe_allow_html=True)
                             if st.button("🔍 Ver Modo Foco grande", key=f"ver_foco_{sel['id']}", type="primary", use_container_width=True):
                                 st.session_state.modo_foco = True; st.rerun()
- 
+
                         st.markdown("#### ⚡ Tabulação 1 clique")
                         c1, c2, c3, c4 = st.columns(4)
                         with c1:
@@ -467,7 +476,7 @@ else:
                         with c7:
                             if st.button("❌ Erro número", use_container_width=True, key=f"fin_er_{sel['id']}"):
                                 registrar_evento(sel, "nao_atendeu", "Número errado")
- 
+
 # =========================================================
 # MINI DASH + EXPORTAR
 # =========================================================
@@ -478,11 +487,10 @@ if st.session_state.leads:
     tempo_total = df_all["duracao_seg"].sum()
     tmo = tempo_total / max(len(df_all[df_all["status"] != "pendente"]), 1)
     st.markdown(f'<div class="mini-dash">📥 {pend} | ⏱️ TMO {formatar_tempo(tmo)} | 💰 {vendas} vendas</div>', unsafe_allow_html=True)
- 
+
 st.markdown("---")
 with st.expander("📥 Exportar CSV"):
     if st.session_state.leads:
         df_all = pd.DataFrame(st.session_state.leads)
         csv = df_all.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Baixar CSV", csv, file_name=f"BRS_{datetime.now().strftime('%d%m%Y_%H%M')}.csv", mime="text/csv", use_container_width=True)
- 
