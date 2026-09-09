@@ -29,7 +29,6 @@ def checar_login():
     st.markdown("""
     <div style="text-align:center;padding:40px;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);border-radius:20px;color:white;margin-bottom:20px;">
     <h1>🚀 A&K BRS v6.0.1 ULTIMATE FIX</h1>
-    <p>Versão Corrigida - SyntaxError Fix</p>
     </div>
     """, unsafe_allow_html=True)
     senha = st.text_input("🔒 Senha de acesso", type="password")
