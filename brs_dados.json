@@ -2328,31 +2328,6 @@
       "ddd": "21"
     },
     {
-      "id": "d3aa259d055d",
-      "nome": "Adriana Cardoso Lima",
-      "cpf": "172.655.803-91",
-      "telefone": "11997233940",
-      "banco": "WILL",
-      "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
-      "duracao_seg": 0,
-      "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
-      "notas_cliente": "",
-      "arquivado_motivo": "",
-      "retorno_hora": "",
-      "canal": "chip",
-      "custo_estimado": 0.0,
-      "retorno_data": null,
-      "lote": "BRS-PAN-150-Leads-TESTE.csv",
-      "data_import": "09/09 03:47",
-      "ddd": "11"
-    },
-    {
       "id": "331d023f98cd",
       "nome": "Vanessa Lopes Costa",
       "cpf": "361.188.506-85",
@@ -3801,5 +3776,5 @@
   ],
   "nao_perturbe": [],
   "meta_diaria": 20,
-  "atualizado_em": "09/09/2026 14:18:24"
+  "atualizado_em": "09/09/2026 14:18:56"
 }
