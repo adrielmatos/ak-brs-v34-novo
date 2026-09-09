@@ -3763,10 +3763,17 @@
       "importados": 150,
       "ignorados": 12,
       "detalhe": "Tel:0 Bloq:0 Dup:12 DDD:0 NP:0"
+    },
+    {
+      "id": "lote_20260909153201619294",
+      "nome": "teste",
+      "descricao": "",
+      "criado_em": "09/09/2026 15:32:01",
+      "quantidade": 0
     }
   ],
   "nao_perturbe": [],
   "meta_diaria": 20,
   "excluidos": [],
-  "atualizado_em": "09/09/2026 15:31:39"
+  "atualizado_em": "09/09/2026 15:32:01"
 }
