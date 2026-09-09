@@ -2185,11 +2185,17 @@
       "banco": "C6 BANK",
       "produto": "FGTS",
       "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "tentativas": 1,
+      "ultima": "09/09 15:43",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09/2026 15:43:29",
+          "acao": "atendimento_iniciado",
+          "texto": "Atendimento iniciado"
+        }
+      ],
       "tabulacao": "",
       "observacao": "",
       "notas_cliente": "",
@@ -3802,5 +3808,5 @@
       "excluido_motivo": "Excluído manualmente"
     }
   ],
-  "atualizado_em": "09/09/2026 15:35:34"
+  "atualizado_em": "09/09/2026 15:43:29"
 }
