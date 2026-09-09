@@ -7,7 +7,7 @@
       "telefone": "41988984237",
       "banco": "ITAÚ",
       "produto": "FGTS",
-      "status": "retorno_futuro",
+      "status": "pendente",
       "tentativas": 0,
       "ultima": "09/09 04:08",
       "duracao_seg": 0,
