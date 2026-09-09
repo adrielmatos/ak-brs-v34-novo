@@ -123,14 +123,21 @@
       "telefone": "62984153477",
       "banco": "DAYCOVAL",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "nao_atendeu",
+      "tentativas": 1,
+      "ultima": "09/09 02:59",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
+      "historico": [
+        {
+          "data": "09/09 02:59:47",
+          "acao": "nao_atendeu",
+          "tempo": "00:00",
+          "tab": "Caixa postal"
+        }
+      ],
+      "tabulacao": "Caixa postal",
+      "observacao": "Caixa postal",
       "canal": "chip",
       "custo_estimado": 0.0,
       "retorno_data": null,
