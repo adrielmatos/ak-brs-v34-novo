@@ -65,14 +65,21 @@
       "telefone": "21990512442",
       "banco": "BANRISUL",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "nao_atendeu",
+      "tentativas": 1,
+      "ultima": "09/09 02:51",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
+      "historico": [
+        {
+          "data": "09/09 02:51:02",
+          "acao": "nao_atendeu",
+          "tempo": "00:00",
+          "tab": "Desligado"
+        }
+      ],
+      "tabulacao": "Desligado",
+      "observacao": "Desligado",
       "canal": "chip",
       "custo_estimado": 0.0,
       "retorno_data": null,
