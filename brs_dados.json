@@ -3772,9 +3772,17 @@
       "importados": 0,
       "ignorados": 162,
       "detalhe": "Tel:0 Bloq:0 Dup:162 DDD:0 NP:0"
+    },
+    {
+      "id": "lote_20260909145701871246",
+      "nome": "teste",
+      "descricao": "",
+      "criado_em": "09/09/2026 14:57:01",
+      "quantidade": 0
     }
   ],
   "nao_perturbe": [],
   "meta_diaria": 20,
-  "atualizado_em": "09/09/2026 14:18:56"
+  "excluidos": [],
+  "atualizado_em": "09/09/2026 14:57:01"
 }
