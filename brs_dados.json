@@ -3225,10 +3225,16 @@
       "ultima": "Nunca",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09/2026 15:44:07",
+          "acao": "nota",
+          "texto": "Observação atualizada"
+        }
+      ],
       "tabulacao": "",
       "observacao": "",
-      "notas_cliente": "",
+      "notas_cliente": "Retorna amanhã ",
       "arquivado_motivo": "",
       "retorno_hora": "",
       "canal": "chip",
@@ -3813,5 +3819,5 @@
       "excluido_motivo": "Excluído manualmente"
     }
   ],
-  "atualizado_em": "09/09/2026 15:43:43"
+  "atualizado_em": "09/09/2026 15:44:07"
 }
