@@ -207,16 +207,23 @@
       "telefone": "41989716321",
       "banco": "PAN",
       "produto": "FGTS",
-      "status": "pendente",
+      "status": "arquivado",
       "tentativas": 0,
-      "ultima": "Nunca",
+      "ultima": "09/09 03:48",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09 03:48:10",
+          "acao": "arquivado",
+          "tempo": "00:00",
+          "tab": "Já foi ligado - ocultar"
+        }
+      ],
       "tabulacao": "",
       "observacao": "",
       "notas_cliente": "",
-      "arquivado_motivo": "",
+      "arquivado_motivo": "Já foi ligado - ocultar",
       "retorno_hora": "",
       "canal": "chip",
       "custo_estimado": 0.0,
