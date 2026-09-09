@@ -3751,6 +3751,22 @@
       "lote": "BRS-PAN-150-Leads-TESTE.csv",
       "data_import": "09/09 03:47",
       "ddd": "11"
+    },
+    {
+      "nome": "Adriana Cardoso Lima",
+      "telefone": "11997233940",
+      "banco": "WILL",
+      "lote": "teste",
+      "status": "pendente",
+      "id": "lead_20260909153259655825_92",
+      "ddd": "11",
+      "tentativas": 0,
+      "ultima": "Nunca",
+      "notas_cliente": "",
+      "observacao": "",
+      "retorno_hora": "",
+      "arquivado_motivo": "",
+      "historico": []
     }
   ],
   "bloqueados": [],
@@ -3775,5 +3791,5 @@
   "nao_perturbe": [],
   "meta_diaria": 20,
   "excluidos": [],
-  "atualizado_em": "09/09/2026 15:32:01"
+  "atualizado_em": "09/09/2026 15:32:59"
 }
