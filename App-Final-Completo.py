@@ -10,7 +10,7 @@ import urllib.parse
 from collections import Counter
 import os
 
-st.set_page_config(page_title="A&K BRS v5.4 - SEM SMS", layout="wide", page_icon="📱")
+st.set_page_config(page_title="A&K BRS v5.4.1 - FIX XLSX", layout="wide", page_icon="📱")
 
 # =========================================================
 # CONFIG GITHUB
@@ -27,7 +27,7 @@ GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}
 
 def checar_login():
     if st.session_state.get("logado"): return True
-    st.markdown("## 🔒 A&K BRS v5.4")
+    st.markdown("## 🔒 A&K BRS v5.4.1")
     senha = st.text_input("Senha de acesso", type="password")
     if st.button("Entrar", type="primary"): 
         senha_correta = st.secrets.get("APP_PASSWORD", None) if GITHUB_TOKEN else "1234"
@@ -92,7 +92,7 @@ if "leads" not in st.session_state:
     st.session_state.em_pausa=None; st.session_state.pausa_inicio=None; st.session_state.modo_foco=False
 
 # =========================================================
-# FUNÇÕES
+# FUNÇÕES - FIX OPENPYXL
 # =========================================================
 def formatar_tempo(seg):
     if not seg or seg<=0: return "00:00"
@@ -101,16 +101,12 @@ def formatar_tempo(seg):
     return f"{m:02d}:{s:02d}"
 
 def proximo_inteligente(atual_id=None):
-    # NOVA LÓGICA: NUNCA LIGADOS PRIMEIRO, DEPOIS MENOS TENTATIVAS
     pend=[l for l in st.session_state.leads if l["status"]=="pendente"]
     if not pend: return None
-    
     def score_inteligente(l):
         tent=l.get("tentativas",0)
-        nunca=0 if l.get("ultima")=="Nunca" else 1000  # Nunca ligados tem prioridade máxima
-        # Quanto menos tentativas, menor score, mais prioritário
+        nunca=0 if l.get("ultima")=="Nunca" else 1000
         return nunca + tent*10
-    
     pend_sorted=sorted(pend, key=score_inteligente)
     if not atual_id: return pend_sorted[0]["id"]
     ids=[l["id"] for l in pend_sorted]
@@ -121,17 +117,34 @@ def proximo_inteligente(atual_id=None):
 
 def ler_planilha(up):
     nome=up.name.lower()
+    # XLSX / XLS - TENTA COM OPENPYXL, SE FALHAR AVISA
     if nome.endswith((".xlsx",".xls")):
-        try: return pd.read_excel(up)
-        except: up.seek(0); return pd.read_excel(up, engine='openpyxl')
+        try:
+            # tenta openpyxl (xlsx) ou xlrd (xls)
+            return pd.read_excel(up)
+        except ImportError as e:
+            if "openpyxl" in str(e):
+                st.error("❌ Erro: openpyxl não instalado. No GitHub, adicione 'openpyxl' no requirements.txt e faça reboot do app.")
+                st.info("💡 Solução rápida: converta essa planilha para CSV (Salvar como > CSV) e suba o CSV que funciona sem openpyxl")
+                raise ValueError("openpyxl não instalado - Converta para CSV ou adicione openpyxl no requirements.txt")
+        except Exception as e:
+            # tenta segunda tentativa com openpyxl engine explícito
+            try:
+                up.seek(0)
+                return pd.read_excel(up, engine='openpyxl')
+            except Exception as e2:
+                st.error(f"❌ Não consegui ler {up.name}: {e2}")
+                st.info("💡 Tente salvar como CSV e subir CSV")
+                raise e2
+    # CSV - tenta vários encodings e separadores
     conteudo=up.read()
-    for enc in ["utf-8","latin1","cp1252"]:
+    for enc in ["utf-8","latin1","cp1252","iso-8859-1"]:
         for sep in [",",";","\t","|"]:
             try:
                 df=pd.read_csv(BytesIO(conteudo), encoding=enc, sep=sep)
                 if len(df.columns)>1: return df
             except: continue
-    raise ValueError("Não consegui ler CSV")
+    raise ValueError("Não consegui ler CSV - tente salvar como UTF-8")
 
 def montar_novos_leads(df, existentes, bloqueados, nome_lote):
     df.columns=[str(c).upper().strip() for c in df.columns]
@@ -162,27 +175,20 @@ def montar_novos_leads(df, existentes, bloqueados, nome_lote):
         })
     return novos, ig_tel, ig_bloq, ig_dup, ig_ddd
 
-# =========================================================
-# ESTILO
-# =========================================================
 st.markdown("""
 <style>
 .mini-dash {position:fixed;bottom:12px;right:12px;background:rgba(255,255,255,0.95);border:1px solid #e0e0e0;border-radius:12px;padding:8px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:9999;font-size:12px;}
 .foco-overlay {background:#f8fafc;border:2px solid #00c853;border-radius:16px;padding:20px;}
-.alerta {padding:10px 14px;border-radius:10px;margin-bottom:8px;font-size:13px;} 
 .lote-card {border:1px solid #e0e0e0;border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;}
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# HEADER
-# =========================================================
-st.markdown("## 📱 A&K BRS v5.4 - SEM SMS + TENTATIVAS INTELIGENTE")
+st.markdown("## 📱 A&K BRS v5.4.1 - FIX XLSX + SEM SMS")
 col_h1,col_h2,col_h3,col_h4 = st.columns([2.5,1,1,1])
 with col_h1:
     total=len(st.session_state.leads); pend=len([l for l in st.session_state.leads if l["status"]=="pendente"])
     nunca=len([l for l in st.session_state.leads if l["status"]=="pendente" and l.get("ultima")=="Nunca"])
-    st.caption(f"📱 {total} | 📥 {pend} pend | 🆕 {nunca} nunca ligados | 📦 {len(st.session_state.lotes)} lotes")
+    st.caption(f"📱 {total} | 📥 {pend} pend | 🆕 {nunca} nunca | 📦 {len(st.session_state.lotes)} lotes | ✅ Fix openpyxl")
 with col_h2: st.session_state.auto_next=st.checkbox("⏭️ Auto", value=True)
 with col_h3:
     if st.button("🧠 Próximo Inteligente", use_container_width=True, type="primary"):
@@ -191,20 +197,14 @@ with col_h3:
 with col_h4:
     if st.button("🔄 Sair", use_container_width=True) and GITHUB_TOKEN: st.session_state.logado=False; st.rerun()
 
-# =========================================================
-# SIDEBAR
-# =========================================================
 with st.sidebar:
     st.markdown("### 🎯 Filtros")
     banco_list=["TODOS"]+sorted(list(set([l["banco"] for l in st.session_state.leads]))) if st.session_state.leads else ["TODOS"]
     st.session_state.filtro_banco=st.selectbox("🏦 Banco", banco_list)
     st.session_state.filtro_status=st.selectbox("📊 Status", ["PENDENTES","ATENDIDOS","NÃO ATENDEU","RETORNOS","VENDAS","TODOS","QUARENTENA"])
-    
-    # NOVO FILTRO TENTATIVAS
     st.markdown("#### 🔢 Tentativas")
     st.session_state.filtro_tentativas=st.selectbox("Tentativas", ["TODAS","NUNCA LIGADOS (T0)","T1 (1 tentativa)","T2 (2 tentativas)","T3+ (3 ou mais)","T0+T1 (novos)","T2+ (reciclagem)"], label_visibility="collapsed")
     st.session_state.ordenar_por=st.selectbox("Ordenar por", ["NUNCA LIGADOS PRIMEIRO","MENOS TENTATIVAS PRIMEIRO","MAIS TENTATIVAS PRIMEIRO","NOME A-Z"], label_visibility="collapsed")
-    
     busca=st.text_input("🔍 Buscar", placeholder="Nome, banco, lote...")
     st.markdown("---")
     st.markdown("### ⏸️ Pausas")
@@ -229,20 +229,16 @@ with st.sidebar:
     st.markdown("### 📦 Gestão de Lotes")
     if st.session_state.lotes:
         for lote in st.session_state.lotes[-10:][::-1]:
-            with st.container():
-                st.markdown(f"<div class='lote-card'><b>📦 {lote['nome']}</b><br>📅 {lote['data']}<br>📱 {lote['qtd']} linhas → ✅ {lote.get('importados',0)} importados</div>", unsafe_allow_html=True)
-                c1,c2=st.columns(2)
-                with c1:
-                    if st.button(f"🗑️ Excluir", key=f"del_lote_{lote['id']}", use_container_width=True):
-                        st.session_state.leads=[l for l in st.session_state.leads if l.get('lote')!=lote['nome']]
-                        st.session_state.lotes=[lt for lt in st.session_state.lotes if lt['id']!=lote['id']]
-                        salvar_dados(); st.success(f"Lote {lote['nome']} excluído"); st.rerun()
-                with c2:
-                    if st.button(f"📋 Ver", key=f"ver_lote_{lote['id']}", use_container_width=True):
-                        st.session_state.filtro_banco="TODOS"
-                        # filtra só esse lote via busca
-                        st.session_state["busca_lote"]=lote['nome']
-                        st.rerun()
+            st.markdown(f"<div class='lote-card'><b>📦 {lote['nome']}</b><br>📅 {lote['data']}<br>✅ {lote.get('importados',0)}/{lote['qtd']}</div>", unsafe_allow_html=True)
+            c1,c2=st.columns(2)
+            with c1:
+                if st.button(f"🗑️ Excluir", key=f"del_lote_{lote['id']}", use_container_width=True):
+                    st.session_state.leads=[l for l in st.session_state.leads if l.get('lote')!=lote['nome']]
+                    st.session_state.lotes=[lt for lt in st.session_state.lotes if lt['id']!=lote['id']]
+                    salvar_dados(); st.success(f"Lote {lote['nome']} excluído"); st.rerun()
+            with c2:
+                if st.button(f"📋 Ver", key=f"ver_lote_{lote['id']}", use_container_width=True):
+                    st.session_state.filtro_banco="TODOS"; st.rerun()
     else:
         st.caption("Nenhum lote ainda")
     st.markdown("---")
@@ -258,20 +254,20 @@ with st.sidebar:
 
 modo_foco_ativo=st.session_state.modo_foco and st.session_state.selected_id in st.session_state.call_start if st.session_state.selected_id else False
 
-# =========================================================
-# IMPORTAÇÃO
-# =========================================================
 if not st.session_state.leads:
-    st.info("📥 Suba planilhas - com gestão de lotes")
+    st.info("📥 Suba planilhas - Aceita CSV, XLSX, XLS (com openpyxl)")
 else:
     with st.expander("📥 SUBIR NOVAS PLANILHAS (várias) - Clique", expanded=False):
+        st.markdown("**Aceita:** .csv, .xlsx, .xls | Se .xlsx der erro, converta para CSV")
         arquivos=st.file_uploader("Arraste várias planilhas", type=["csv","xlsx","xls"], accept_multiple_files=True, key="import_multi")
         if arquivos:
             dfs,erros=[],[]
             for arq in arquivos:
                 try: df_arq=ler_planilha(arq); dfs.append((arq.name, df_arq))
                 except Exception as e: erros.append(f"{arq.name}: {e}")
-            if erros: st.error("Erros: "+" | ".join(erros))
+            if erros: 
+                for err in erros: st.error(err)
+                st.warning("💡 Dica: Se for .xlsx com erro openpyxl, abra no Excel e Salvar como > CSV (separado por vírgulas) e suba o CSV")
             if dfs:
                 total_linhas=sum(len(df) for _,df in dfs)
                 st.success(f"📦 {len(dfs)} planilha(s) | {total_linhas} linhas")
@@ -289,14 +285,10 @@ else:
                         st.session_state.lotes.append({
                             "id":lote_id,"nome":nome,"data":datetime.now().strftime("%d/%m %H:%M"),
                             "qtd":len(df),"importados":len(novos),"ignorados":ig_tel+ig_bloq+ig_dup+ig_ddd,
-                            "detalhe":f"Tel:{ig_tel} Bloq:{ig_bloq} Dup:{ig_dup} DDD:{ig_ddd}"
                         })
                     salvar_dados()
                     st.success(f"✅ {total_importados} importados"); st.rerun()
 
-# =========================================================
-# LISTA COM FILTRO TENTATIVAS INTELIGENTE
-# =========================================================
 lista=[]
 for l in st.session_state.leads:
     if st.session_state.filtro_banco!="TODOS" and l["banco"]!=st.session_state.filtro_banco: continue
@@ -306,9 +298,7 @@ for l in st.session_state.leads:
     if st.session_state.filtro_status=="RETORNOS" and l["status"]!="retorno_futuro": continue
     if st.session_state.filtro_status=="VENDAS" and l["status"]!="venda_finalizada": continue
     if st.session_state.filtro_status=="QUARENTENA" and not (l.get("tentativas",0)>=3 and "caixa" in l.get("observacao","").lower()): continue
-    # FILTRO TENTATIVAS NOVO
-    tent=l.get("tentativas",0)
-    ultima=l.get("ultima","Nunca")
+    tent=l.get("tentativas",0); ultima=l.get("ultima","Nunca")
     if st.session_state.filtro_tentativas=="NUNCA LIGADOS (T0)" and ultima!="Nunca": continue
     if st.session_state.filtro_tentativas=="T1 (1 tentativa)" and tent!=1: continue
     if st.session_state.filtro_tentativas=="T2 (2 tentativas)" and tent!=2: continue
@@ -318,7 +308,6 @@ for l in st.session_state.leads:
     if busca and busca.lower() not in l["nome"].lower() and busca.lower() not in l["banco"].lower() and busca.lower() not in l.get("lote","").lower(): continue
     lista.append(l)
 
-# ORDENAÇÃO INTELIGENTE: NUNCA LIGADOS PRIMEIRO, DEPOIS MENOS TENTATIVAS
 if st.session_state.ordenar_por=="NUNCA LIGADOS PRIMEIRO":
     lista=sorted(lista, key=lambda x: (0 if x.get("ultima")=="Nunca" else 1, x.get("tentativas",0)))
 elif st.session_state.ordenar_por=="MENOS TENTATIVAS PRIMEIRO":
@@ -368,28 +357,14 @@ else:
             bloqueado=lead["telefone"] in st.session_state.blocklist
             dot="🚫" if bloqueado else {"pendente":"⚪","atendido":"🟢","nao_atendeu":"🔴","retorno_futuro":"🟠","venda_finalizada":"💰"}[lead["status"]]
             is_sel=lead["id"]==st.session_state.selected_id
-            # MOSTRA TENTATIVAS NA LISTA
             tent=lead.get("tentativas",0)
             ultima=lead.get("ultima","Nunca")
             tent_txt=f" T{tent}" if tent>0 else " 🆕" if ultima=="Nunca" else f" T{tent}"
-            lote_txt=f" 📦{lead.get('lote','')[:6]}" if lead.get('lote') else ""
-            if st.button(f"{'👉' if is_sel else ''}{dot} {lead['nome'][:10]} • {lead['banco']}{tent_txt}{lote_txt}", key=f"list_{lead['id']}", use_container_width=True, type="primary" if is_sel else "secondary"):
+            if st.button(f"{'👉' if is_sel else ''}{dot} {lead['nome'][:10]} • {lead['banco']}{tent_txt}", key=f"list_{lead['id']}", use_container_width=True, type="primary" if is_sel else "secondary"):
                 st.session_state.selected_id=lead["id"]; st.session_state.modo_foco=False; st.rerun()
     with col_atend:
         if not st.session_state.selected_id:
             st.info("👈 Selecione cliente ou 🧠 Próximo Inteligente")
-            if st.session_state.lotes:
-                st.markdown("#### 📦 Resumo por Lote")
-                df_lotes=pd.DataFrame([{"Lote":l["nome"],"Data":l["data"],"Total":l["qtd"],"Importados":l["importados"],"Ignorados":l["ignorados"]} for l in st.session_state.lotes])
-                st.dataframe(df_lotes, use_container_width=True)
-            # RESUMO TENTATIVAS
-            st.markdown("#### 🔢 Resumo por Tentativas")
-            df_all=pd.DataFrame(st.session_state.leads)
-            if not df_all.empty:
-                df_all["tentativas"]=df_all["tentativas"].fillna(0)
-                resumo_tent=df_all.groupby("tentativas").size().reset_index(name="qtd")
-                resumo_tent["status"] = resumo_tent["tentativas"].apply(lambda x: "🆕 Nunca ligados" if x==0 else f"T{x}")
-                st.dataframe(resumo_tent, use_container_width=True)
         else:
             sel=next((l for l in st.session_state.leads if l["id"]==st.session_state.selected_id), None)
             if sel:
@@ -437,12 +412,7 @@ else:
                             registrar_evento(sel,"retorno_futuro","Retornar amanhã 14h", retorno_data=amanha)
                     with c7:
                         if st.button("❌ Erro número", use_container_width=True, key=f"fin_er_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Número errado")
-                    with st.expander(f"📜 Histórico {sel['nome']} - T{tent}"):
-                        if sel.get("historico"):
-                            for h in sel["historico"][-5:][::-1]: st.caption(f"{h['data']} - {h['acao']} - {h['tempo']} - {h['tab']}")
-                        else: st.caption("Nenhum histórico - 🆕 Nunca ligado")
 
-# MINI DASH
 if st.session_state.leads:
     df_all=pd.DataFrame(st.session_state.leads)
     pend=len(df_all[df_all["status"]=="pendente"]); nunca=len(df_all[(df_all["status"]=="pendente") & (df_all["ultima"]=="Nunca")]); vendas=len(df_all[df_all["status"]=="venda_finalizada"]); tempo_total=df_all["duracao_seg"].sum()
