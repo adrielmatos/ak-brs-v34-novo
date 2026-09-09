@@ -4,7 +4,7 @@ import hashlib
 import base64
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 from io import BytesIO
 import urllib.parse
 import os
@@ -12,7 +12,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
 
-st.set_page_config(page_title="A&K BRS v6.0.1 FIX SYNTAX", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="Discadora Eletrônica A&K", layout="wide", page_icon="📞")
 
 try: 
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
@@ -27,15 +27,32 @@ GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}
 def checar_login():
     if st.session_state.get("logado"): return True
     st.markdown("""
-    <div style="text-align:center;padding:40px;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);border-radius:20px;color:white;margin-bottom:20px;">
-    <h1>🚀 A&K BRS v6.0.1 ULTIMATE FIX</h1>
+    <style>
+    .login-container {display:flex;justify-content:center;align-items:center;min-height:80vh;}
+    .login-card {background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:50px 40px;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center;max-width:420px;width:100%;border:1px solid rgba(0,255,136,0.2);}
+    .login-card h1 {color:white;font-size:32px;margin:0 0 8px 0;font-weight:800;letter-spacing:-1px;}
+    .login-card p {color:#00ff88;font-size:14px;margin:0 0 30px 0;letter-spacing:2px;text-transform:uppercase;font-weight:600;}
+    .login-icon {font-size:56px;margin-bottom:16px;display:block;}
+    </style>
+    <div class="login-container">
+    <div class="login-card">
+    <span class="login-icon">📞</span>
+    <h1>Discadora Eletrônica</h1>
+    <h1 style="color:#00e5ff;margin-top:-10px;">A&K</h1>
+    <p>Sistema Profissional de Discagem</p>
+    </div>
     </div>
     """, unsafe_allow_html=True)
-    senha = st.text_input("🔒 Senha de acesso", type="password")
-    if st.button("Entrar no Sistema", type="primary", use_container_width=True): 
-        senha_correta = st.secrets.get("APP_PASSWORD", None) if GITHUB_TOKEN else "1234"
-        if senha == senha_correta: st.session_state.logado = True; st.rerun()
-        else: st.error("Senha incorreta.")
+    col1,col2,col3=st.columns([1,1.2,1])
+    with col2:
+        senha = st.text_input("🔒 Senha de acesso", type="password", placeholder="Digite sua senha")
+        if st.button("🚀 Entrar no Sistema", type="primary", use_container_width=True): 
+            senha_correta = st.secrets.get("APP_PASSWORD", None) if GITHUB_TOKEN else "1234"
+            if senha == senha_correta: 
+                st.session_state.logado = True
+                st.rerun()
+            else: 
+                st.error("Senha incorreta.")
     return False
 
 if GITHUB_TOKEN:
@@ -47,9 +64,9 @@ def carregar_dados():
             try:
                 with open("brs_dados_local.json","r",encoding="utf-8") as f:
                     d=json.load(f)
-                    return d.get("leads",[]), d.get("pausas",[]), set(d.get("bloqueados",[])), d.get("lotes",[]), d.get("nao_perturbe",[])
-            except: return [],[],set(),[],[]
-        return [],[],set(),[],[]
+                    return d.get("leads",[]), d.get("pausas",[]), set(d.get("bloqueados",[])), d.get("lotes",[]), d.get("nao_perturbe",[]), d.get("meta_diaria",20)
+            except: return [],[],set(),[],[],20
+        return [],[],set(),[],[],20
     try:
         headers={"Authorization": f"token {GITHUB_TOKEN}"}
         r=requests.get(GITHUB_API, headers=headers)
@@ -57,16 +74,16 @@ def carregar_dados():
             conteudo=r.json()
             st.session_state["_gh_sha"]=conteudo["sha"]
             dados=json.loads(base64.b64decode(conteudo["content"]).decode("utf-8"))
-            return dados.get("leads",[]), dados.get("pausas",[]), set(dados.get("bloqueados",[])), dados.get("lotes",[]), dados.get("nao_perturbe",[])
+            return dados.get("leads",[]), dados.get("pausas",[]), set(dados.get("bloqueados",[])), dados.get("lotes",[]), dados.get("nao_perturbe",[]), dados.get("meta_diaria",20)
         elif r.status_code==404:
             st.session_state["_gh_sha"]=None
-            return [],[],set(),[],[]
+            return [],[],set(),[],[],20
     except Exception as e:
         st.error(f"Erro GitHub: {e}")
-    return [],[],set(),[],[]
+    return [],[],set(),[],[],20
 
 def salvar_dados():
-    payload={"leads":st.session_state.leads,"pausas":st.session_state.pausas,"bloqueados":list(st.session_state.blocklist),"lotes":st.session_state.lotes,"nao_perturbe":st.session_state.nao_perturbe}
+    payload={"leads":st.session_state.leads,"pausas":st.session_state.pausas,"bloqueados":list(st.session_state.blocklist),"lotes":st.session_state.lotes,"nao_perturbe":st.session_state.nao_perturbe,"meta_diaria":st.session_state.get("meta_diaria",20)}
     conteudo_str=json.dumps(payload, ensure_ascii=False, indent=2)
     if not GITHUB_API or not GITHUB_TOKEN:
         with open("brs_dados_local.json","w",encoding="utf-8") as f: f.write(conteudo_str)
@@ -74,7 +91,7 @@ def salvar_dados():
     try:
         conteudo_b64=base64.b64encode(conteudo_str.encode("utf-8")).decode("utf-8")
         headers={"Authorization": f"token {GITHUB_TOKEN}"}
-        body={"message": f"v6.0.1 {datetime.now().strftime('%d/%m %H:%M:%S')}","content": conteudo_b64}
+        body={"message": f"Discadora A&K {datetime.now().strftime('%d/%m %H:%M:%S')}","content": conteudo_b64}
         if st.session_state.get("_gh_sha"): body["sha"]=st.session_state["_gh_sha"]
         r=requests.put(GITHUB_API, headers=headers, json=body)
         if r.status_code in (200,201): st.session_state["_gh_sha"]=r.json()["content"]["sha"]
@@ -82,11 +99,18 @@ def salvar_dados():
         st.warning(f"Não salvou GitHub: {e}")
 
 if "leads" not in st.session_state:
-    leads,pausas,blocklist,lotes,nao_perturbe=carregar_dados()
+    leads,pausas,blocklist,lotes,nao_perturbe,meta_diaria=carregar_dados()
+    # MIGRAÇÃO: garante campos novos
+    for l in leads:
+        if "notas_cliente" not in l: l["notas_cliente"] = ""
+        if "arquivado_motivo" not in l: l["arquivado_motivo"] = ""
+        if "retorno_hora" not in l: l["retorno_hora"] = ""
     st.session_state.leads=leads; st.session_state.pausas=pausas; st.session_state.blocklist=blocklist; st.session_state.lotes=lotes; st.session_state.nao_perturbe=nao_perturbe
+    st.session_state.meta_diaria=meta_diaria
     st.session_state.selected_id=None; st.session_state.auto_next=True; st.session_state.call_start={}; st.session_state.filtro_banco="TODOS"; st.session_state.filtro_status="PENDENTES"
     st.session_state.filtro_tentativas="TODAS"; st.session_state.ordenar_por="NUNCA LIGADOS PRIMEIRO"; st.session_state.filtro_ddd="TODOS"
     st.session_state.em_pausa=None; st.session_state.pausa_inicio=None; st.session_state.modo_foco=False
+    st.session_state.busca_global=""
 
 def formatar_tempo(seg):
     if not seg or seg<=0: return "00:00"
@@ -148,15 +172,13 @@ def ler_xlsx_sem_openpyxl(file_bytes):
             shared_strings=[]
             for si in ss_root.findall('main:si', ns):
                 t=si.find('main:t', ns)
-                if t is not None: 
-                    shared_strings.append(t.text if t.text else "")
+                if t is not None: shared_strings.append(t.text if t.text else "")
                 else:
                     txt=""
                     for t in si.findall('.//main:t', ns):
                         if t.text: txt+=t.text
                     shared_strings.append(txt)
-        except: 
-            shared_strings=[]
+        except: shared_strings=[]
         try:
             sheet_data=z.read('xl/worksheets/sheet1.xml')
             sheet_root=ET.fromstring(sheet_data)
@@ -168,32 +190,24 @@ def ler_xlsx_sem_openpyxl(file_bytes):
                     v=c.find('main:v', ns)
                     if v is not None and v.text:
                         if c.get('t')=='s' and shared_strings:
-                            try: 
-                                idx=int(v.text)
-                                cols.append(shared_strings[idx] if idx < len(shared_strings) else v.text)
-                            except: 
-                                cols.append(v.text)
-                        else: 
-                            cols.append(v.text)
+                            try: idx=int(v.text); cols.append(shared_strings[idx] if idx < len(shared_strings) else v.text)
+                            except: cols.append(v.text)
+                        else: cols.append(v.text)
                     else:
                         is_elem=c.find('main:is', ns)
                         if is_elem is not None:
                             t=is_elem.find('main:t', ns)
                             cols.append(t.text if t is not None and t.text else "")
-                        else: 
-                            cols.append("")
+                        else: cols.append("")
                 rows.append(cols)
             if rows:
-                header=rows[0]
-                data=rows[1:]
+                header=rows[0]; data=rows[1:]
                 max_cols=max(len(r) for r in rows)
                 for r in data:
-                    while len(r)<max_cols: 
-                        r.append("")
+                    while len(r)<max_cols: r.append("")
                 df=pd.DataFrame(data, columns=header[:max_cols] if len(header)>=max_cols else header + [f"COL_{i}" for i in range(len(header), max_cols)])
                 return df
-        except Exception:
-            pass
+        except Exception: pass
         raise ValueError("Conversor manual falhou")
     except zipfile.BadZipFile:
         raise ValueError("XLSX inválido")
@@ -203,23 +217,17 @@ def ler_planilha(up):
     file_bytes=up.read()
     up.seek(0)
     if nome.endswith(".xlsx"):
-        try: 
-            return ler_xlsx_sem_openpyxl(file_bytes)
-        except Exception as e: 
-            raise ValueError(f"{up.name}: {e} - Adicione openpyxl no requirements ou converta para CSV")
+        try: return ler_xlsx_sem_openpyxl(file_bytes)
+        except Exception as e: raise ValueError(f"{up.name}: {e}")
     elif nome.endswith(".xls"):
-        try: 
-            return pd.read_excel(BytesIO(file_bytes), engine='xlrd')
-        except: 
-            return pd.read_excel(BytesIO(file_bytes))
+        try: return pd.read_excel(BytesIO(file_bytes), engine='xlrd')
+        except: return pd.read_excel(BytesIO(file_bytes))
     for enc in ["utf-8","latin1","cp1252","iso-8859-1"]:
         for sep in [",",";","\t","|"]:
             try:
                 df=pd.read_csv(BytesIO(file_bytes), encoding=enc, sep=sep)
-                if len(df.columns)>1: 
-                    return df
-            except: 
-                continue
+                if len(df.columns)>1: return df
+            except: continue
     raise ValueError(f"{up.name}: Não consegui ler")
 
 def montar_novos_leads(df, existentes, bloqueados, nao_perturbe_set, nome_lote):
@@ -228,57 +236,66 @@ def montar_novos_leads(df, existentes, bloqueados, nao_perturbe_set, nome_lote):
     col_cpf=next((c for c in df.columns if "CPF" in c), None)
     col_tel=next((c for c in df.columns if "TELEFONE" in c or c=="TEL" or "CEL" in c or "FONE" in c), None)
     col_banco=next((c for c in df.columns if "BANCO" in c), None)
-    novos=[]
-    ig_tel=0
-    ig_bloq=0
-    ig_dup=0
-    ig_ddd=0
-    ig_np=0
+    novos=[]; ig_tel=0; ig_bloq=0; ig_dup=0; ig_ddd=0; ig_np=0
     for idx,row in df.iterrows():
         cpf=str(row.get(col_cpf,"")).strip() if col_cpf else f"semcpf{idx}"
         tel_raw=str(row.get(col_tel,"")).strip() if col_tel else ""
         tel="".join(filter(str.isdigit, tel_raw))
-        if not tel or len(tel)<10: 
-            ig_tel+=1
-            continue
+        if not tel or len(tel)<10: ig_tel+=1; continue
         try:
             ddd=int(tel[:2])
-            if ddd<11 or ddd>91: 
-                ig_ddd+=1
-                continue
-        except:
-            ig_ddd+=1
-            continue
+            if ddd<11 or ddd>91: ig_ddd+=1; continue
+        except: ig_ddd+=1; continue
         if tel in bloqueados or tel in nao_perturbe_set: 
-            if tel in nao_perturbe_set: 
-                ig_np+=1
-            else: 
-                ig_bloq+=1
+            if tel in nao_perturbe_set: ig_np+=1
+            else: ig_bloq+=1
             continue
         h=hashlib.sha256(f"{cpf}{tel}".encode()).hexdigest()[:12]
-        if h in existentes: 
-            ig_dup+=1
-            continue
+        if h in existentes: ig_dup+=1; continue
         existentes.add(h)
         novos.append({
             "id":h,"nome":str(row.get(col_nome,f"Lead {idx}"))[:40],"cpf":cpf,
             "telefone":tel,"banco":str(row.get(col_banco,"PAN")).upper()[:20] if col_banco else "PAN",
             "produto":"FGTS","status":"pendente","tentativas":0,"ultima":"Nunca",
-            "duracao_seg":0,"duracao_txt":"00:00","historico":[],"tabulacao":"","observacao":"","canal":"chip","custo_estimado":0.0,"retorno_data":None,
+            "duracao_seg":0,"duracao_txt":"00:00","historico":[],"tabulacao":"","observacao":"","notas_cliente":"","arquivado_motivo":"","retorno_hora":"",
+            "canal":"chip","custo_estimado":0.0,"retorno_data":None,
             "lote":nome_lote,"data_import":datetime.now().strftime("%d/%m %H:%M"),"ddd":tel[:2]
         })
     return novos, ig_tel, ig_bloq, ig_dup, ig_ddd, ig_np
 
+# CSS V6.0.5 - OBSERVAÇÕES + RETORNOS + ARQUIVADOS
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@600&display=swap');
 html, body, [class*="css"] {font-family:'Space Grotesk', sans-serif;}
 .mini-dash {position:fixed;bottom:12px;right:12px;background:linear-gradient(135deg,#0f0c29,#302b63);color:white;border:1px solid #00ff88;border-radius:16px;padding:12px 18px;box-shadow:0 8px 32px rgba(0,255,136,0.3);z-index:9999;font-size:12px;font-weight:600;}
 .foco-overlay {background:linear-gradient(135deg,#0f0c29,#302b63);border:2px solid #00ff88;border-radius:20px;padding:30px;box-shadow:0 0 40px rgba(0,255,136,0.4);color:white;}
 .lote-card {background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #00e5ff;border-radius:12px;padding:12px;margin-bottom:10px;color:white;box-shadow:0 4px 15px rgba(0,229,255,0.2);}
-.kpi-card {background:linear-gradient(135deg,#0f0c29,#302b63);border:1px solid #00ff88;border-radius:16px;padding:16px;color:white;text-align:center;box-shadow:0 4px 20px rgba(0,255,136,0.2);}
-.kpi-card h3 {font-size:28px;margin:0;color:#00ff88;}
-.kpi-card p {font-size:12px;margin:4px 0 0 0;opacity:0.8;}
+.kpi-card {background:linear-gradient(135deg,#0f0c29,#302b63);border:1px solid rgba(0,255,136,0.3);border-radius:16px;padding:16px;color:white;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);transition:all 0.3s;cursor:pointer;}
+.kpi-card:hover {border-color:#00ff88;box-shadow:0 6px 30px rgba(0,255,136,0.3);transform:translateY(-2px);}
+.kpi-card h3 {font-size:28px;margin:0;color:#00ff88;font-family:'JetBrains Mono', monospace;}
+.kpi-card.vendas h3 {color:#ffcc00;}
+.kpi-card.nunca h3 {color:#00e5ff;}
+.kpi-card.retornos h3 {color:#ff8c00;}
+.kpi-card.arquivados h3 {color:#a0a0a0;}
+.kpi-card p {font-size:11px;margin:6px 0 0 0;opacity:0.7;letter-spacing:1px;text-transform:uppercase;font-weight:600;}
+.lead-card {background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border:1px solid rgba(0,229,255,0.2);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);}
+.tab-header {background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 16px;margin-bottom:16px;}
+.fila-header {font-size:14px !important; font-weight:700 !important; color:#00e5ff !important; letter-spacing:1px; text-transform:uppercase;}
+.stButton>button {border-radius:10px !important; font-weight:600 !important; transition:all 0.2s !important;}
+.stButton>button:hover {transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.3);}
+@keyframes pulse-green {
+  0% {box-shadow:0 0 0 0 rgba(0,255,136,0.7); border-color:#00ff88;}
+  70% {box-shadow:0 0 0 10px rgba(0,255,136,0); border-color:#00ff88;}
+  100% {box-shadow:0 0 0 0 rgba(0,255,136,0); border-color:#00ff88;}
+}
+.t0-pulse {animation:pulse-green 2s infinite; border:1px solid #00ff88 !important; background:linear-gradient(135deg,rgba(0,255,136,0.15),rgba(0,229,255,0.1)) !important;}
+.search-top {background:linear-gradient(135deg,rgba(15,12,41,0.9),rgba(48,43,99,0.9));border:1px solid rgba(0,255,136,0.2);border-radius:12px;padding:12px 16px;margin-bottom:16px;}
+.meta-bar {background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid rgba(255,204,0,0.3);border-radius:12px;padding:12px 16px;margin-bottom:12px;}
+.obs-box {background:rgba(255,204,0,0.08);border:1px solid rgba(255,204,0,0.3);border-radius:12px;padding:12px;margin-top:12px;}
+.hist-timeline {background:rgba(0,229,255,0.05);border-left:3px solid #00e5ff;padding-left:16px;margin:8px 0;}
+.retorno-card {background:linear-gradient(135deg,#2a1a0e,#3d2a14);border:1px solid #ff8c00;border-radius:12px;padding:14px;margin-bottom:10px;color:white;}
+.arquivado-card {background:linear-gradient(135deg,#1a1a1a,#2a2a2a);border:1px solid #555;border-radius:12px;padding:14px;margin-bottom:10px;color:#aaa;opacity:0.8;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -288,40 +305,76 @@ nunca=len([l for l in st.session_state.leads if l["status"]=="pendente" and l.ge
 vendas=len([l for l in st.session_state.leads if l["status"]=="venda_finalizada"])
 vendas_hoje=len([l for l in st.session_state.leads if l["status"]=="venda_finalizada" and datetime.now().strftime("%d/%m") in l.get("ultima","")])
 retornos=retornos_hoje()
+retornos_total=len([l for l in st.session_state.leads if l["status"]=="retorno_futuro"])
+arquivados=len([l for l in st.session_state.leads if l["status"]=="arquivado"])
 mh=melhor_horario()
+meta=st.session_state.get("meta_diaria",20)
+perc_meta=min(100, int(vendas_hoje/meta*100)) if meta>0 else 0
 
 st.markdown(f"""
-<div style="background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:24px;border-radius:20px;color:white;margin-bottom:16px;">
+<div style="background:linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%);padding:22px 28px;border-radius:20px;color:white;margin-bottom:16px;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid rgba(0,255,136,0.15);">
 <div style="display:flex;justify-content:space-between;align-items:center;">
-<div><h1 style="margin:0;font-size:32px;">🚀 A&K BRS v6.0.1 ULTIMATE FIX</h1><p style="margin:4px 0 0 0;opacity:0.8;">Fix SyntaxError - Auto Conversor + Lotes + Futurista</p></div>
-<div style="text-align:right;"><p style="margin:0;font-size:12px;opacity:0.7;">{datetime.now().strftime('%d/%m/%Y %H:%M')}</p><p style="margin:0;font-size:14px;color:#00ff88;">● Online | GitHub Sync</p></div>
+<div style="display:flex;align-items:center;gap:16px;">
+<div style="background:linear-gradient(135deg,#00e5ff,#00ff88);width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;">📞</div>
+<div><h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Discadora Eletrônica <span style="color:#00e5ff;">A&K</span></h1><p style="margin:2px 0 0 0;opacity:0.6;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;">Sistema Profissional • Retornos + Observações + Arquivados</p></div>
+</div>
+<div style="text-align:right;">
+<p style="margin:0;font-size:11px;opacity:0.5;font-family:'JetBrains Mono';">{datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:4px;"><div style="width:8px;height:8px;background:#00ff88;border-radius:50%;box-shadow:0 0 10px #00ff88;"></div><span style="font-size:12px;color:#00ff88;font-weight:600;">Online</span></div>
+</div>
 </div>
 </div>
 """, unsafe_allow_html=True)
 
-k1,k2,k3,k4,k5,k6=st.columns(6)
+col_search, col_meta = st.columns([2,1])
+with col_search:
+    st.markdown('<div class="search-top">', unsafe_allow_html=True)
+    st.session_state.busca_global = st.text_input("🔍 Busca Global", value=st.session_state.get("busca_global",""), placeholder="🔍 Nome, banco, lote, telefone, DDD... ( / )", label_visibility="collapsed")
+    st.markdown('</div>', unsafe_allow_html=True)
+with col_meta:
+    st.markdown('<div class="meta-bar">', unsafe_allow_html=True)
+    c_m1, c_m2 = st.columns([2,1])
+    with c_m1:
+        st.markdown(f"<div style='color:white;font-size:12px;font-weight:700;'>🎯 META: {vendas_hoje}/{meta} vendas ({perc_meta}%)</div>", unsafe_allow_html=True)
+        st.progress(perc_meta/100)
+    with c_m2:
+        nova_meta = st.number_input("Meta", min_value=1, max_value=100, value=meta, label_visibility="collapsed")
+        if nova_meta != meta:
+            st.session_state.meta_diaria = nova_meta
+            salvar_dados()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# KPIs CLICÁVEIS - AGORA COM ARQUIVADOS
+k1,k2,k3,k4,k5,k6,k7=st.columns(7)
 with k1: st.markdown(f'<div class="kpi-card"><h3>{total}</h3><p>📱 TOTAL</p></div>', unsafe_allow_html=True)
 with k2: st.markdown(f'<div class="kpi-card"><h3>{pend}</h3><p>📥 PENDENTES</p></div>', unsafe_allow_html=True)
-with k3: st.markdown(f'<div class="kpi-card"><h3>{nunca}</h3><p>🆕 NUNCA LIGADOS</p></div>', unsafe_allow_html=True)
-with k4: st.markdown(f'<div class="kpi-card"><h3>{vendas}</h3><p>💰 VENDAS TOTAL</p></div>', unsafe_allow_html=True)
-with k5: st.markdown(f'<div class="kpi-card"><h3>{vendas_hoje}</h3><p>🔥 VENDAS HOJE</p></div>', unsafe_allow_html=True)
-with k6: st.markdown(f'<div class="kpi-card"><h3>{len(retornos)}</h3><p>⏰ RETORNOS HOJE</p></div>', unsafe_allow_html=True)
+with k3: st.markdown(f'<div class="kpi-card nunca"><h3>{nunca}</h3><p>🆕 NUNCA LIGADOS</p></div>', unsafe_allow_html=True)
+with k4: st.markdown(f'<div class="kpi-card vendas"><h3>{vendas}</h3><p>💰 VENDAS TOTAL</p></div>', unsafe_allow_html=True)
+with k5: st.markdown(f'<div class="kpi-card vendas"><h3>{vendas_hoje}</h3><p>🔥 VENDAS HOJE</p></div>', unsafe_allow_html=True)
+with k6: st.markdown(f'<div class="kpi-card retornos"><h3>{retornos_total}</h3><p>⏰ RETORNOS FUTUROS</p></div>', unsafe_allow_html=True)
+with k7: st.markdown(f'<div class="kpi-card arquivados"><h3>{arquivados}</h3><p>📁 ARQUIVADOS</p></div>', unsafe_allow_html=True)
 
-if retornos: st.warning(f"⏰ {len(retornos)} retorno(s) agendado(s) para hoje")
-if mh: st.success(f"📈 Seu melhor horário: {mh}")
+if retornos: st.markdown(f'<div style="background:linear-gradient(90deg,#ff8c00,#ffcc00);color:#000;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px;margin:12px 0;">⏰ {len(retornos)} retorno(s) hoje! Aba ⏰ RETORNOS FUTUROS</div>', unsafe_allow_html=True)
+if mh: st.markdown(f'<div style="background:linear-gradient(90deg,#00c853,#00ff88);color:#000;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px;margin:12px 0;">📈 Melhor horário: {mh}</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 DISCADOR", "📦 LOTES & IMPORTAÇÃO", "📊 RELATÓRIOS", "⚙️ CONFIG & COMPLIANCE"])
+# TABS - NOVA ABA RETORNOS FUTUROS
+tab1, tab_ret, tab2, tab3, tab4 = st.tabs(["🎯 DISCADOR", "⏰ RETORNOS FUTUROS", "📦 LOTES & IMPORTAÇÃO", "📊 RELATÓRIOS", "⚙️ CONFIG & COMPLIANCE"])
 
+# =========================================================
+# TAB DISCADOR - COM OBSERVAÇÕES + ARQUIVAR + HISTÓRICO INTUITIVO
+# =========================================================
 with tab1:
-    col_h1,col_h2,col_h3,col_h4=st.columns([2,1,1,1])
-    with col_h1: st.caption(f"📦 {len(st.session_state.lotes)} lotes | 🔄 Auto conversor | 🛡️ Não Perturbe OK")
+    st.markdown('<div class="tab-header">', unsafe_allow_html=True)
+    col_h1,col_h2,col_h3,col_h4=st.columns([2.2,1,1,1])
+    with col_h1: st.caption(f"📦 {len(st.session_state.lotes)} lotes • 🆕 T0 pulsando • 📁 {arquivados} arquivados • ⌨️ Enter/Espaço//")
     with col_h2: st.session_state.auto_next=st.checkbox("⏭️ Auto Next", value=True)
     with col_h3:
         if st.button("🧠 Próximo Inteligente", use_container_width=True, type="primary"):
             nxt=proximo_inteligente(st.session_state.selected_id)
             if nxt: st.session_state.selected_id=nxt; st.session_state.modo_foco=False; st.rerun()
     with col_h4:
-        if st.button("🔄 Sair", use_container_width=True) and GITHUB_TOKEN: st.session_state.logado=False; st.rerun()
+        if st.button("🚪 Sair", use_container_width=True) and GITHUB_TOKEN: st.session_state.logado=False; st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
     modo_foco_ativo=st.session_state.modo_foco and st.session_state.selected_id in st.session_state.call_start if st.session_state.selected_id else False
 
@@ -333,9 +386,14 @@ with tab1:
         if st.session_state.filtro_status=="NÃO ATENDEU" and l["status"]!="nao_atendeu": continue
         if st.session_state.filtro_status=="RETORNOS" and l["status"]!="retorno_futuro": continue
         if st.session_state.filtro_status=="VENDAS" and l["status"]!="venda_finalizada": continue
+        if st.session_state.filtro_status=="ARQUIVADOS" and l["status"]!="arquivado": continue
         if st.session_state.filtro_status=="QUARENTENA" and not (l.get("tentativas",0)>=3 and "caixa" in l.get("observacao","").lower()): continue
-        tent=l.get("tentativas",0)
-        ultima=l.get("ultima","Nunca")
+        # Se filtro é PENDENTES, não mostra arquivados
+        if st.session_state.filtro_status=="PENDENTES" and l["status"]=="arquivado": continue
+        if st.session_state.filtro_status=="TODOS" and l["status"]=="arquivado": 
+            # Em TODOS mostra, mas pode esconder se quiser
+            pass
+        tent=l.get("tentativas",0); ultima=l.get("ultima","Nunca")
         if st.session_state.filtro_tentativas=="NUNCA LIGADOS (T0)" and ultima!="Nunca": continue
         if st.session_state.filtro_tentativas=="T1 (1 tentativa)" and tent!=1: continue
         if st.session_state.filtro_tentativas=="T2 (2 tentativas)" and tent!=2: continue
@@ -355,27 +413,25 @@ with tab1:
     elif st.session_state.ordenar_por=="NOME A-Z":
         lista=sorted(lista, key=lambda x: x.get("nome",""))
 
-    def registrar_evento(sel,status_final,obs_pronta,retorno_data=None):
-        fim=datetime.now()
-        dur=0
-        if sel["id"] in st.session_state.call_start: 
-            dur=(fim-st.session_state.call_start[sel["id"]]).total_seconds()
-            del st.session_state.call_start[sel["id"]]
-        sel["status"]=status_final
-        sel["tentativas"]=sel.get("tentativas",0)+1
-        sel["ultima"]=fim.strftime("%d/%m %H:%M")
-        sel["duracao_seg"]=int(dur)
-        sel["duracao_txt"]=formatar_tempo(dur)
-        sel["observacao"]=obs_pronta
-        sel["tabulacao"]=obs_pronta[:30]
-        sel["retorno_data"]=retorno_data
+    def registrar_evento(sel,status_final,obs_pronta,retorno_data=None, retorno_hora=None):
+        fim=datetime.now(); dur=0
+        if sel["id"] in st.session_state.call_start: dur=(fim-st.session_state.call_start[sel["id"]]).total_seconds(); del st.session_state.call_start[sel["id"]]
+        sel["status"]=status_final; sel["tentativas"]=sel.get("tentativas",0)+1; sel["ultima"]=fim.strftime("%d/%m %H:%M"); sel["duracao_seg"]=int(dur); sel["duracao_txt"]=formatar_tempo(dur)
+        sel["observacao"]=obs_pronta; sel["tabulacao"]=obs_pronta[:30]; sel["retorno_data"]=retorno_data; sel["retorno_hora"]=retorno_hora or ""
+        historico=sel.get("historico") or []; historico.append({"data":fim.strftime("%d/%m %H:%M:%S"),"acao":status_final,"tempo":formatar_tempo(dur),"tab":obs_pronta, "retorno": f"{retorno_data} {retorno_hora}" if retorno_data else ""}); sel["historico"]=historico
+        salvar_dados(); st.session_state.modo_foco=False
+        if st.session_state.auto_next and status_final!="retorno_futuro": st.session_state.selected_id=proximo_inteligente(sel["id"])
+        st.rerun()
+
+    def arquivar_lead(sel, motivo="Já foi ligado - ocultar"):
+        sel["status"]="arquivado"
+        sel["arquivado_motivo"]=motivo
+        sel["ultima"]=datetime.now().strftime("%d/%m %H:%M")
         historico=sel.get("historico") or []
-        historico.append({"data":fim.strftime("%d/%m %H:%M:%S"),"acao":status_final,"tempo":formatar_tempo(dur),"tab":obs_pronta})
+        historico.append({"data":datetime.now().strftime("%d/%m %H:%M:%S"),"acao":"arquivado","tempo":"00:00","tab":motivo})
         sel["historico"]=historico
         salvar_dados()
-        st.session_state.modo_foco=False
-        if st.session_state.auto_next: 
-            st.session_state.selected_id=proximo_inteligente(sel["id"])
+        st.session_state.selected_id=proximo_inteligente(sel["id"])
         st.rerun()
 
     if modo_foco_ativo:
@@ -389,9 +445,9 @@ with tab1:
             st.markdown("</div>", unsafe_allow_html=True)
             c1,c2,c3,c4=st.columns(4)
             with c1:
-                if st.button("✅ Interessado", use_container_width=True, type="primary", key=f"foco_at1_{sel['id']}"): registrar_evento(sel,"atendido","Atendeu - interessado")
+                if st.button("✅ Atendeu", use_container_width=True, type="primary", key=f"foco_at1_{sel['id']}"): registrar_evento(sel,"atendido","Atendeu - interessado")
             with c2:
-                if st.button("🔴 Caixa", use_container_width=True, key=f"foco_cx_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Caixa postal")
+                if st.button("📬 Caixa Postal", use_container_width=True, key=f"foco_cx_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Caixa postal")
             with c3:
                 if st.button("📵 Desligado", use_container_width=True, key=f"foco_des_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Desligado")
             with c4:
@@ -400,27 +456,43 @@ with tab1:
     else:
         col_lista,col_atend=st.columns([1,2.2])
         with col_lista:
-            st.markdown(f"#### 📋 Fila ({len(lista)}) | {st.session_state.ordenar_por}")
+            st.markdown(f'<p class="fila-header">📋 Fila ({len(lista)}) • {st.session_state.ordenar_por}</p>', unsafe_allow_html=True)
             total_pags=(len(lista)//80)+1
             pag=st.selectbox(f"Página - {total_pags} págs", [f"{i*80+1}-{(i+1)*80}" for i in range(total_pags)], key="pag_disc")
             idx_pag=int(pag.split("-")[0])//80 if pag else 0
             for lead in lista[idx_pag*80:(idx_pag+1)*80]:
                 bloqueado=lead["telefone"] in st.session_state.blocklist or lead["telefone"] in st.session_state.nao_perturbe
-                dot="🚫" if bloqueado else {"pendente":"⚪","atendido":"🟢","nao_atendeu":"🔴","retorno_futuro":"🟠","venda_finalizada":"💰"}[lead["status"]]
+                dot="🚫" if bloqueado else {"pendente":"⚪","atendido":"🟢","nao_atendeu":"🔴","retorno_futuro":"🟠","venda_finalizada":"💰","arquivado":"📁"}[lead["status"]]
                 is_sel=lead["id"]==st.session_state.selected_id
-                tent=lead.get("tentativas",0)
-                ultima=lead.get("ultima","Nunca")
-                tent_txt=f" T{tent}" if tent>0 else " 🆕" if ultima=="Nunca" else f" T{tent}"
-                if st.button(f"{'👉' if is_sel else ''}{dot} {lead['nome'][:12]} • {lead['banco']}{tent_txt}", key=f"list_{lead['id']}", use_container_width=True, type="primary" if is_sel else "secondary"):
+                tent=lead.get("tentativas",0); ultima=lead.get("ultima","Nunca")
+                eh_t0 = ultima=="Nunca" and tent==0
+                tent_txt=f" T{tent}" if tent>0 else " 🆕 T0" if eh_t0 else f" T{tent}"
+                # Mostra se tem observação
+                tem_obs = "📝" if lead.get("notas_cliente") else ""
+                if st.button(f"{'👉' if is_sel else ''}{dot}{tem_obs} {lead['nome'][:12]} • {lead['banco']}{tent_txt}", key=f"list_{lead['id']}", use_container_width=True, type="primary" if is_sel else "secondary"):
                     st.session_state.selected_id=lead["id"]; st.session_state.modo_foco=False; st.rerun()
         with col_atend:
             if not st.session_state.selected_id:
-                st.info("👈 Selecione cliente na fila ou clique 🧠 Próximo Inteligente")
+                st.info("👈 Selecione cliente na fila • Atalhos: Enter=Próx | Espaço=Ligar | /=Busca")
+                st.markdown('<div class="lead-card">', unsafe_allow_html=True)
+                st.markdown("#### 🆕 Novidades v6.0.5 - Intuitivo")
+                st.markdown("""
+                - 📝 **Observações**: Escreva notas no cliente, fica salvo
+                - 📁 **Já foi ligado - Ocultar**: Botão pra tirar da lista pendente
+                - 📅 **Retorno com data**: Escolha data e hora, vai pra aba Retornos
+                - ⏰ **Aba Retornos Futuros**: Nova aba só com agendamentos, por data
+                - 📊 **Histórico intuitivo**: Clica no cliente e vê timeline do que já foi feito
+                """)
+                st.markdown('</div>', unsafe_allow_html=True)
             else:
                 sel=next((l for l in st.session_state.leads if l["id"]==st.session_state.selected_id), None)
                 if sel:
                     tent=sel.get("tentativas",0)
-                    st.markdown(f"### 👤 {sel['nome']} | 🏦 {sel['banco']} | 📱 {sel['telefone']} | 🔢 T{tent} | 📦 {sel.get('lote','')}")
+                    cpf_raw = sel.get("cpf","")
+                    # CARD PRINCIPAL
+                    st.markdown('<div class="lead-card">', unsafe_allow_html=True)
+                    st.markdown(f"### 👤 {sel['nome']} | 🏦 {sel['banco']} | 📱 {sel['telefone']} | 🔢 T{tent} | 📦 {sel.get('lote','')[:20]}")
+                    st.caption(f"CPF: {cpf_raw} | DDD: {sel.get('ddd','')} | Import: {sel.get('data_import','')} | Status: {sel['status'].upper()}")
                     if sel["telefone"] in st.session_state.nao_perturbe: 
                         st.error("🚫 Não Perturbe Anatel - NÃO LIGAR")
                     else:
@@ -431,57 +503,185 @@ with tab1:
                         elif not em_ligacao:
                             col_d1,col_d2,col_d3=st.columns([1.5,1,1])
                             with col_d1:
-                                if st.button(f"▶️ LIGAR CHIP • {sel['telefone']}", key=f"discar_{sel['id']}", type="primary", use_container_width=True):
+                                if st.button(f"▶️ LIGAR CHIP • {sel['telefone']} (Espaço)", key=f"discar_{sel['id']}", type="primary", use_container_width=True):
                                     st.session_state.call_start[sel["id"]]=datetime.now(); st.session_state.modo_foco=True; st.rerun()
                             with col_d2:
-                                msg_map={"PAN":f"Olá {sel['nome']}, A&K sobre FGTS PAN liberado. Explico 1 min?","BMG":f"Olá {sel['nome']}, BMG liberou FGTS. Quer saber valor?","C6":f"Olá {sel['nome']}, C6 liberou FGTS. Explico rapidinho?"}
+                                msg_map={"PAN":f"Olá {sel['nome']}, A&K sobre FGTS PAN liberado. Explico 1 min?","BMG":f"Olá {sel['nome']}, BMG liberou FGTS. Quer saber valor?","C6":f"Olá {sel['nome']}, C6 liberou FGTS. Explico rapidinho?","ITAÚ":f"Olá {sel['nome']}, Itaú liberou FGTS. Quer saber valor?","ITAU":f"Olá {sel['nome']}, Itaú liberou FGTS. Quer saber valor?"}
                                 msg=msg_map.get(sel["banco"], f"Olá {sel['nome']}, A&K FGTS {sel['banco']} liberado")
                                 msg_enc=urllib.parse.quote(msg)
-                                st.markdown(f'<a href="https://wa.me/55{sel["telefone"]}?text={msg_enc}" target="_blank" style="display:block;background:#25D366;color:#fff;padding:12px;border-radius:10px;text-align:center;font-weight:700;text-decoration:none">💬 Zap</a>', unsafe_allow_html=True)
+                                st.markdown(f'<a href="https://wa.me/55{sel["telefone"]}?text={msg_enc}" target="_blank" style="display:block;background:#25D366;color:#fff;padding:12px;border-radius:10px;text-align:center;font-weight:700;text-decoration:none">💬 Zap {sel["banco"]}</a>', unsafe_allow_html=True)
                             with col_d3:
                                 if st.button("🚫 Bloquear", key=f"bloq_{sel['id']}", use_container_width=True): 
-                                    st.session_state.blocklist.add(sel["telefone"])
-                                    salvar_dados()
-                                    st.rerun()
+                                    st.session_state.blocklist.add(sel["telefone"]); salvar_dados(); st.rerun()
                         else:
                             decorrido=(datetime.now()-st.session_state.call_start[sel["id"]]).total_seconds()
                             st.warning(f"📱 EM LIGAÇÃO: {formatar_tempo(decorrido)}")
                             st.markdown(f'<a href="tel:{sel["telefone"]}" style="display:block;background:linear-gradient(90deg,#00e5ff,#00ff88);color:#000;padding:20px;border-radius:14px;text-align:center;font-weight:900;text-decoration:none;font-size:22px">📱 {sel["telefone"]} • ⏱️ {formatar_tempo(decorrido)}</a>', unsafe_allow_html=True)
-                        st.markdown("#### ⚡ Tabulação 1 Clique")
-                        c1,c2,c3,c4=st.columns(4)
-                        with c1:
-                            if st.button("✅ Atendeu", use_container_width=True, type="primary", key=f"fin_at_{sel['id']}"): registrar_evento(sel,"atendido","Atendeu - interessado")
-                        with c2:
-                            if st.button("🔴 Caixa", use_container_width=True, key=f"fin_cx_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Caixa postal")
-                        with c3:
-                            if st.button("📵 Deslig", use_container_width=True, key=f"fin_des_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Desligado")
-                        with c4:
-                            if st.button("💰 Venda", use_container_width=True, key=f"fin_ve_{sel['id']}"): st.balloons(); registrar_evento(sel,"venda_finalizada","Venda FGTS")
-                        c5,c6,c7=st.columns(3)
-                        with c5:
-                            if st.button("🤔 Sem interesse", use_container_width=True, key=f"fin_si_{sel['id']}"): registrar_evento(sel,"atendido","Sem interesse")
-                        with c6:
-                            if st.button("📅 Retorno Amanhã", use_container_width=True, key=f"fin_rt_{sel['id']}"):
-                                amanha=(datetime.now()+timedelta(days=1)).strftime("%d/%m/%Y")
-                                registrar_evento(sel,"retorno_futuro","Retornar amanhã", retorno_data=amanha)
-                        with c7:
-                            if st.button("❌ Erro número", use_container_width=True, key=f"fin_er_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Número errado")
+                    
+                    # TABULAÇÃO
+                    st.markdown("#### ⚡ Tabulação Rápida - 1 Clique")
+                    c1,c2,c3,c4=st.columns(4)
+                    with c1:
+                        if st.button("✅ Atendeu - Interessado", use_container_width=True, type="primary", key=f"fin_at_{sel['id']}"): registrar_evento(sel,"atendido","Atendeu - interessado")
+                    with c2:
+                        if st.button("📬 Caixa Postal", use_container_width=True, key=f"fin_cx_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Caixa postal")
+                    with c3:
+                        if st.button("📵 Desligado", use_container_width=True, key=f"fin_des_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Desligado")
+                    with c4:
+                        if st.button("💰 Venda Fechada!", use_container_width=True, key=f"fin_ve_{sel['id']}"): st.balloons(); registrar_evento(sel,"venda_finalizada","Venda FGTS")
+                    c5,c6,c7,c8=st.columns(4)
+                    with c5:
+                        if st.button("🤔 Sem interesse", use_container_width=True, key=f"fin_si_{sel['id']}"): registrar_evento(sel,"atendido","Sem interesse no momento")
+                    with c6:
+                        if st.button("❌ Número errado", use_container_width=True, key=f"fin_er_{sel['id']}"): registrar_evento(sel,"nao_atendeu","Número errado")
+                    with c7:
+                        # BOTÃO NOVO: JÁ FOI LIGADO - OCULTAR DA LISTA
+                        if st.button("📁 Já liguei - Ocultar lista", use_container_width=True, key=f"fin_arq_{sel['id']}", help="Tira da lista de pendentes, não aparece mais"):
+                            arquivar_lead(sel, "Já foi ligado - ocultar da lista")
+                    with c8:
+                        if st.button("🔄 Voltar p/ Pendentes", use_container_width=True, key=f"fin_volta_{sel['id']}", help="Se arquivou por engano"):
+                            sel["status"]="pendente"
+                            salvar_dados()
+                            st.rerun()
+
+                    # RETORNO FUTURO COM DATA ESCOLHIDA
+                    st.markdown("#### 📅 Agendar Retorno Futuro com Data")
+                    with st.expander("📅 Clique para agendar retorno com data/hora", expanded=False):
+                        col_dt1, col_dt2 = st.columns(2)
+                        with col_dt1:
+                            data_ret = st.date_input("📅 Data do retorno", value=date.today()+timedelta(days=1), key=f"data_ret_{sel['id']}")
+                        with col_dt2:
+                            hora_ret = st.time_input("⏰ Hora do retorno", value=time(14,0), key=f"hora_ret_{sel['id']}")
+                        motivo_ret = st.text_input("📝 Motivo/Obs do retorno", placeholder="Ex: Pediu pra ligar segunda 14h, falar com esposa", key=f"motivo_ret_{sel['id']}")
+                        if st.button(f"✅ Agendar retorno para {data_ret.strftime('%d/%m/%Y')} às {hora_ret.strftime('%H:%M')}", type="primary", use_container_width=True, key=f"conf_ret_{sel['id']}"):
+                            data_str = data_ret.strftime("%d/%m/%Y")
+                            hora_str = hora_ret.strftime("%H:%M")
+                            obs_ret = f"Retorno agendado {data_str} {hora_str} - {motivo_ret}" if motivo_ret else f"Retorno agendado {data_str} {hora_str}"
+                            registrar_evento(sel,"retorno_futuro", obs_ret, retorno_data=data_str, retorno_hora=hora_str)
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    # OBSERVAÇÕES DO CLIENTE - NOVO
+                    st.markdown('<div class="obs-box">', unsafe_allow_html=True)
+                    st.markdown("#### 📝 Observações deste cliente")
+                    st.caption("Escreva tudo sobre o cliente: ex: tem 2 cartões, prefere WhatsApp, falou que recebe dia 5, etc. Fica salvo.")
+                    notas_atual = sel.get("notas_cliente","")
+                    novas_notas = st.text_area("Observações", value=notas_atual, placeholder="Ex: Cliente disse que tem FGTS de 2 empresas, quer sacar só PAN, ligar após 18h, esposa atende...", key=f"notas_area_{sel['id']}", label_visibility="collapsed", height=100)
+                    col_obs1, col_obs2 = st.columns([1,1])
+                    with col_obs1:
+                        if st.button("💾 Salvar Observações", use_container_width=True, key=f"save_obs_{sel['id']}"):
+                            sel["notas_cliente"] = novas_notas
+                            salvar_dados()
+                            st.success("Observações salvas!")
+                    with col_obs2:
+                        if sel.get("notas_cliente"):
+                            st.info(f"📝 Salvo: {sel.get('notas_cliente')[:80]}...")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    # HISTÓRICO INTUITIVO - O QUE JÁ FOI FEITO
+                    st.markdown('<div class="lead-card">', unsafe_allow_html=True)
+                    st.markdown(f"#### 📊 Histórico Completo - O que já foi feito com {sel['nome']}")
+                    col_hist1, col_hist2, col_hist3, col_hist4 = st.columns(4)
+                    hist = sel.get("historico") or []
+                    total_lig = len(hist)
+                    total_atendeu = len([h for h in hist if h.get("acao")=="atendido"])
+                    total_caixa = len([h for h in hist if "caixa" in h.get("tab","").lower()])
+                    total_tempo = sum([0]) # placeholder, já tem duracao
+                    # Calcula tempo total deste lead
+                    tempo_lead = sel.get("duracao_seg",0)
+                    for h in hist:
+                        # tenta pegar tempo do histórico se tiver
+                        pass
+                    with col_hist1: st.metric("📞 Total Ligações", total_lig)
+                    with col_hist2: st.metric("✅ Atendeu", total_atendeu)
+                    with col_hist3: st.metric("📬 Caixa Postal", total_caixa)
+                    with col_hist4: st.metric("⏱️ Tempo falado", formatar_tempo(sel.get("duracao_seg",0)))
+
+                    if hist:
+                        st.markdown("**📜 Timeline - Linha do tempo:**")
+                        for h in hist[::-1][:10]:
+                            acao_icon = {"atendido":"✅","nao_atendeu":"🔴","venda_finalizada":"💰","retorno_futuro":"⏰","arquivado":"📁"}.get(h.get("acao"),"📞")
+                            st.markdown(f"<div class='hist-timeline'><b>{acao_icon} {h.get('data','')}</b> | {h.get('acao','').upper()} | ⏱️ {h.get('tempo','00:00')} | {h.get('tab','')[:60]} {f' | 📅 {h.get('retorno','')}' if h.get('retorno') else ''}</div>", unsafe_allow_html=True)
+                    else:
+                        st.caption("🆕 Nunca ligado - Nenhum histórico ainda. Primeira ligação será registrada aqui.")
+                    
+                    if sel.get("notas_cliente"):
+                        st.markdown(f"**📝 Observações salvas:** {sel.get('notas_cliente')}")
+                    if sel.get("retorno_data"):
+                        st.warning(f"⏰ Retorno agendado: {sel.get('retorno_data')} às {sel.get('retorno_hora','')} - {sel.get('observacao','')}")
+                    if sel.get("arquivado_motivo"):
+                        st.info(f"📁 Arquivado: {sel.get('arquivado_motivo')}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+# =========================================================
+# TAB RETORNOS FUTUROS - NOVA ABA
+# =========================================================
+with tab_ret:
+    st.markdown("## ⏰ Retornos Futuros - Agenda Inteligente")
+    st.caption("Aqui ficam todos os clientes que você agendou retorno com data. Escolha a data no discador e ele vem pra cá.")
+    
+    retornos_all = [l for l in st.session_state.leads if l["status"]=="retorno_futuro"]
+    if not retornos_all:
+        st.info("📭 Nenhum retorno agendado ainda. No discador, clique em 📅 Agendar Retorno Futuro com data.")
+    else:
+        # Filtros de retorno
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            hoje_str = datetime.now().strftime("%d/%m/%Y")
+            amanha_str = (datetime.now()+timedelta(days=1)).strftime("%d/%m/%Y")
+            ret_hoje = len([l for l in retornos_all if l.get("retorno_data")==hoje_str])
+            st.metric("⏰ Retornos Hoje", ret_hoje)
+        with col_r2:
+            ret_amanha = len([l for l in retornos_all if l.get("retorno_data")==amanha_str])
+            st.metric("📅 Amanhã", ret_amanha)
+        with col_r3:
+            st.metric("📋 Total Agendados", len(retornos_all))
+        
+        # Ordenar por data
+        def parse_data_ret(l):
+            try:
+                return datetime.strptime(l.get("retorno_data","01/01/2099"), "%d/%m/%Y")
+            except:
+                return datetime(2099,1,1)
+        retornos_sorted = sorted(retornos_all, key=parse_data_ret)
+        
+        for lead in retornos_sorted:
+            st.markdown(f'<div class="retorno-card">', unsafe_allow_html=True)
+            col_r_a, col_r_b = st.columns([2,1])
+            with col_r_a:
+                st.markdown(f"**👤 {lead['nome']} | 🏦 {lead['banco']} | 📱 {lead['telefone']}**")
+                st.markdown(f"📅 **Retorno:** {lead.get('retorno_data','')} às {lead.get('retorno_hora','')} | 📝 {lead.get('observacao','')[:60]}")
+                if lead.get("notas_cliente"):
+                    st.caption(f"📝 Obs: {lead.get('notas_cliente')[:80]}")
+                st.caption(f"📦 Lote: {lead.get('lote','')} | T{lead.get('tentativas',0)} | Última: {lead.get('ultima','')}")
+            with col_r_b:
+                if st.button(f"▶️ Ligar Agora", key=f"ligar_ret_{lead['id']}", type="primary", use_container_width=True):
+                    st.session_state.selected_id = lead["id"]
+                    # Muda aba via session? Por enquanto só seleciona
+                    st.success(f"Selecionado {lead['nome']} - Vá em 🎯 DISCADOR")
+                c1,c2 = st.columns(2)
+                with c1:
+                    if st.button(f"🔄 Reagendar", key=f"reag_ret_{lead['id']}", use_container_width=True):
+                        st.session_state.selected_id = lead["id"]
+                        st.info("Vá em DISCADOR para reagendar")
+                with c2:
+                    if st.button(f"📥 Voltar p/ Pendentes", key=f"pend_ret_{lead['id']}", use_container_width=True):
+                        lead["status"]="pendente"
+                        salvar_dados()
+                        st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
-    st.markdown("## 📦 Gestão de Lotes + Auto Conversor")
+    st.markdown("## 📦 Gestão de Lotes Profissional")
     col_imp1,col_imp2=st.columns([2,1])
     with col_imp1:
-        st.info("✅ Aceita: CSV, XLSX (auto conversor sem openpyxl), XLS | Higienizador + Não Perturbe")
-        arquivos=st.file_uploader("Arraste várias planilhas", type=["csv","xlsx","xls"], accept_multiple_files=True, key="import_ultimate")
+        st.info("✅ Aceita: CSV, XLSX (auto conversor), XLS • Higienizador DDD + Não Perturbe • Caixa Postal")
+        arquivos=st.file_uploader("Arraste várias planilhas aqui", type=["csv","xlsx","xls"], accept_multiple_files=True, key="import_ultimate")
         if arquivos:
-            dfs=[]
-            erros=[]
+            dfs=[]; erros=[]
             for arq in arquivos:
-                try: 
-                    df_arq=ler_planilha(arq)
-                    dfs.append((arq.name, df_arq))
-                except Exception as e: 
-                    erros.append(f"{arq.name}: {e}")
+                try: dfs.append((arq.name, ler_planilha(arq)))
+                except Exception as e: erros.append(f"{arq.name}: {e}")
             if erros: 
                 for err in erros: st.error(err)
             if dfs:
@@ -499,19 +699,13 @@ with tab2:
                         novos,ig_tel,ig_bloq,ig_dup,ig_ddd,ig_np=montar_novos_leads(df.copy(), existentes, st.session_state.blocklist, nao_pert_set, nome)
                         st.session_state.leads.extend(novos)
                         total_importados+=len(novos)
-                        st.session_state.lotes.append({
-                            "id":lote_id,"nome":nome,"data":datetime.now().strftime("%d/%m %H:%M:%S"),
-                            "qtd":len(df),"importados":len(novos),"ignorados":ig_tel+ig_bloq+ig_dup+ig_ddd+ig_np,
-                            "detalhe":f"Tel:{ig_tel} Bloq:{ig_bloq} Dup:{ig_dup} DDD:{ig_ddd} NP:{ig_np}"
-                        })
-                    salvar_dados()
-                    st.success(f"✅ {total_importados} importados")
-                    st.rerun()
+                        st.session_state.lotes.append({"id":lote_id,"nome":nome,"data":datetime.now().strftime("%d/%m %H:%M:%S"),"qtd":len(df),"importados":len(novos),"ignorados":ig_tel+ig_bloq+ig_dup+ig_ddd+ig_np,"detalhe":f"Tel:{ig_tel} Bloq:{ig_bloq} Dup:{ig_dup} DDD:{ig_ddd} NP:{ig_np}"})
+                    salvar_dados(); st.success(f"✅ {total_importados} importados"); st.rerun()
     with col_imp2:
         st.markdown("#### 📦 Lotes Ativos")
         if st.session_state.lotes:
             for lote in st.session_state.lotes[-20:][::-1]:
-                st.markdown(f"<div class='lote-card'><b>📦 {lote['nome'][:20]}</b><br>📅 {lote['data']}<br>✅ {lote.get('importados',0)}/{lote['qtd']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='lote-card'><b>📦 {lote['nome'][:20]}</b><br>📅 {lote['data']}<br>✅ {lote.get('importados',0)}/{lote['qtd']}<br><small>{lote.get('detalhe','')}</small></div>", unsafe_allow_html=True)
                 c1,c2=st.columns(2)
                 with c1:
                     if st.button(f"🗑️ Excluir", key=f"del_lote_tab2_{lote['id']}"): 
@@ -522,24 +716,26 @@ with tab2:
                     df_lote_pd=pd.DataFrame([l for l in st.session_state.leads if l.get('lote')==lote['nome']])
                     if not df_lote_pd.empty:
                         csv=df_lote_pd.to_csv(index=False).encode("utf-8")
-                        st.download_button(f"⬇️", csv, file_name=f"{lote['nome']}_export.csv", mime="text/csv", key=f"dl_tab2_{lote['id']}")
+                        st.download_button(f"⬇️ Exportar", csv, file_name=f"{lote['nome']}_export.csv", mime="text/csv", key=f"dl_tab2_{lote['id']}", use_container_width=True)
 
 with tab3:
-    st.markdown("## 📊 Relatórios")
+    st.markdown("## 📊 Relatórios Profissionais")
     if not st.session_state.leads:
-        st.info("Sem dados")
+        st.info("Sem dados ainda")
     else:
         df_all=pd.DataFrame(st.session_state.leads)
-        c1,c2,c3,c4=st.columns(4)
+        c1,c2,c3,c4,c5=st.columns(5)
         with c1:
             taxa=len(df_all[df_all["status"]=="venda_finalizada"])/max(len(df_all[df_all["status"]!="pendente"]),1)*100
-            st.metric("Conversão", f"{taxa:.1f}%")
+            st.metric("Taxa Conversão", f"{taxa:.1f}%")
         with c2:
             tmo=df_all["duracao_seg"].sum()/max(len(df_all[df_all["status"]!="pendente"]),1)
-            st.metric("TMO", formatar_tempo(tmo))
+            st.metric("TMO Médio", formatar_tempo(tmo))
         with c3:
-            st.metric("Tempo Falado", formatar_tempo(df_all["duracao_seg"].sum()))
+            st.metric("Tempo Total", formatar_tempo(df_all["duracao_seg"].sum()))
         with c4:
+            st.metric("Arquivados", len(df_all[df_all["status"]=="arquivado"]))
+        with c5:
             st.metric("Blocklist+NP", f"{len(st.session_state.blocklist)+len(st.session_state.nao_perturbe)}")
         col_g1,col_g2=st.columns(2)
         with col_g1:
@@ -547,9 +743,16 @@ with tab3:
             vendas_banco=df_all[df_all["status"]=="venda_finalizada"]["banco"].value_counts()
             if not vendas_banco.empty: st.bar_chart(vendas_banco)
         with col_g2:
-            st.markdown("#### 🔢 Por Tentativas")
+            st.markdown("#### 🔢 Leads por Tentativas")
             st.bar_chart(df_all["tentativas"].value_counts().sort_index())
-        e1,e2,e3=st.columns(3)
+        col_g3,col_g4=st.columns(2)
+        with col_g3:
+            st.markdown("#### 📊 Status Geral")
+            st.bar_chart(df_all["status"].value_counts())
+        with col_g4:
+            st.markdown("#### 📦 Por Lote")
+            st.bar_chart(df_all["lote"].value_counts())
+        e1,e2,e3,e4=st.columns(4)
         with e1:
             csv=df_all.to_csv(index=False).encode("utf-8")
             st.download_button("⬇️ CSV Geral", csv, file_name=f"BRS_{datetime.now().strftime('%d%m%Y_%H%M')}.csv", mime="text/csv", use_container_width=True)
@@ -559,15 +762,26 @@ with tab3:
                 csv_v=df_vendas.to_csv(index=False).encode("utf-8")
                 st.download_button("💰 Só VENDAS", csv_v, file_name=f"VENDAS_{datetime.now().strftime('%d%m%Y')}.csv", mime="text/csv", use_container_width=True)
         with e3:
+            df_arq=df_all[df_all["status"]=="arquivado"]
+            if not df_arq.empty:
+                csv_a=df_arq.to_csv(index=False).encode("utf-8")
+                st.download_button("📁 Só ARQUIVADOS", csv_a, file_name=f"ARQUIVADOS_{datetime.now().strftime('%d%m%Y')}.csv", mime="text/csv", use_container_width=True)
+        with e4:
             json_backup=json.dumps({"leads":st.session_state.leads,"pausas":st.session_state.pausas,"bloqueados":list(st.session_state.blocklist),"lotes":st.session_state.lotes}, ensure_ascii=False, indent=2).encode("utf-8")
             st.download_button("💾 Backup JSON", json_backup, file_name=f"BACKUP_{datetime.now().strftime('%d%m%Y_%H%M')}.json", mime="application/json", use_container_width=True)
 
 with tab4:
-    st.markdown("## ⚙️ Config & Não Perturbe")
+    st.markdown("## ⚙️ Configurações + Compliance")
     col_c1,col_c2=st.columns(2)
     with col_c1:
         st.metric("Não Perturbe", len(st.session_state.nao_perturbe))
         st.metric("Blocklist", len(st.session_state.blocklist))
+        st.metric("Arquivados", len([l for l in st.session_state.leads if l["status"]=="arquivado"]))
+        st.number_input("🎯 Meta Diária", min_value=1, max_value=100, value=st.session_state.get("meta_diaria",20), key="meta_input")
+        if st.button("Salvar Meta", use_container_width=True):
+            st.session_state.meta_diaria = st.session_state.meta_input
+            salvar_dados()
+            st.success(f"Meta salva: {st.session_state.meta_diaria}")
         arquivo_np=st.file_uploader("📥 Subir CSV Não Perturbe", type=["csv","xlsx"], key="np_upload")
         if arquivo_np:
             try:
@@ -583,23 +797,68 @@ with tab4:
                 salvar_dados()
                 st.success(f"✅ {novos_np} adicionados")
             except Exception as e: st.error(f"Erro: {e}")
-        if st.button("🚫 Quarentena Caixa 3x+"):
+        if st.button("🚫 Quarentena: Caixa Postal 3x+ → Não Atendeu", use_container_width=True):
             qtd=0
             for l in st.session_state.leads:
                 if l.get("tentativas",0)>=3 and "caixa" in l.get("observacao","").lower() and l["status"]=="pendente":
-                    l["status"]="nao_atendeu"
-                    qtd+=1
-            salvar_dados(); st.success(f"{qtd} em quarentena")
-        if st.button("🗑️ Limpar só PENDENTES"):
+                    l["status"]="nao_atendeu"; qtd+=1
+            salvar_dados(); st.success(f"✅ {qtd} em quarentena")
+        if st.button("🗑️ Limpar SÓ PENDENTES", use_container_width=True):
             st.session_state.leads=[l for l in st.session_state.leads if l["status"]!="pendente"]; salvar_dados(); st.rerun()
+        if st.button("📁 Limpar SÓ ARQUIVADOS", use_container_width=True):
+            st.session_state.leads=[l for l in st.session_state.leads if l["status"]!="arquivado"]; salvar_dados(); st.success("Arquivados limpos"); st.rerun()
     with col_c2:
         st.session_state.filtro_banco=st.selectbox("🏦 Banco", ["TODOS"]+sorted(list(set([l["banco"] for l in st.session_state.leads]))) if st.session_state.leads else ["TODOS"], key="f_banco_cfg")
-        st.session_state.filtro_status=st.selectbox("📊 Status", ["PENDENTES","ATENDIDOS","NÃO ATENDEU","RETORNOS","VENDAS","TODOS","QUARENTENA"], key="f_status_cfg")
+        st.session_state.filtro_status=st.selectbox("📊 Status", ["PENDENTES","ATENDIDOS","NÃO ATENDEU","RETORNOS","VENDAS","ARQUIVADOS","TODOS","QUARENTENA"], key="f_status_cfg")
         st.session_state.filtro_tentativas=st.selectbox("🔢 Tentativas", ["TODAS","NUNCA LIGADOS (T0)","T1 (1 tentativa)","T2 (2 tentativas)","T3+ (3 ou mais)","T0+T1 (novos)","T2+ (reciclagem)"], key="f_tent_cfg")
         st.session_state.ordenar_por=st.selectbox("📈 Ordenar", ["NUNCA LIGADOS PRIMEIRO","MENOS TENTATIVAS PRIMEIRO","MAIS TENTATIVAS PRIMEIRO","NOME A-Z"], key="f_ord_cfg")
         ddds=sorted(list(set([l.get("ddd","") for l in st.session_state.leads if l.get("ddd")])) ) if st.session_state.leads else []
         st.session_state.filtro_ddd=st.selectbox("📍 DDD", ["TODOS"]+ddds, key="f_ddd_cfg")
-        st.session_state.busca_global=st.text_input("🔍 Busca", placeholder="Nome, banco, lote, telefone", key="busca_cfg")
+
+# JS ATALHOS + PULSAÇÃO
+st.markdown("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        if (e.key === '/' && e.target.placeholder && e.target.placeholder.includes('Busca')) return;
+        if (e.key !== '/' && e.key !== 'Enter' && e.key !== ' ') return;
+    }
+    if (e.key === '/') {
+        e.preventDefault();
+        const searchInputs = document.querySelectorAll('input[placeholder*="Busca Global"]');
+        if (searchInputs.length > 0) searchInputs[0].focus();
+    }
+    if (e.key === 'Enter' && !e.ctrlKey) {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            if (btn.innerText.includes('Próximo Inteligente')) {
+                if (!btn.disabled) { e.preventDefault(); btn.click(); break; }
+            }
+        }
+    }
+    if (e.key === ' ' || e.code === 'Space') {
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            const buttons = document.querySelectorAll('button');
+            for (let btn of buttons) {
+                if (btn.innerText.includes('LIGAR CHIP')) {
+                    if (!btn.disabled) { e.preventDefault(); btn.click(); break; }
+                }
+            }
+        }
+    }
+});
+function addPulseToT0() {
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(btn => {
+        if (btn.innerText.includes('🆕') && btn.innerText.includes('T0')) {
+            if (!btn.classList.contains('t0-pulse')) btn.classList.add('t0-pulse');
+        }
+    });
+}
+setInterval(addPulseToT0, 1000);
+setTimeout(addPulseToT0, 500);
+</script>
+""", unsafe_allow_html=True)
 
 if st.session_state.leads:
     df_all=pd.DataFrame(st.session_state.leads)
@@ -608,4 +867,4 @@ if st.session_state.leads:
     vendas=len(df_all[df_all["status"]=="venda_finalizada"])
     tempo_total=df_all["duracao_seg"].sum()
     tmo=tempo_total/max(len(df_all[df_all["status"]!="pendente"]),1)
-    st.markdown(f'<div class="mini-dash">📥 {pend} | 🆕 {nunca} | ⏱️ TMO {formatar_tempo(tmo)} | 💰 {vendas} | 📦 {len(st.session_state.lotes)} | 🛡️ NP {len(st.session_state.nao_perturbe)} | 🚀 v6.0.1 FIX</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="mini-dash">📥 {pend} pend | 🆕 {nunca} nunca | ⏱️ TMO {formatar_tempo(tmo)} | 💰 {vendas} vendas | 📁 {len(df_all[df_all["status"]=="arquivado"])} arq | ⏰ {len(df_all[df_all["status"]=="retorno_futuro"])} ret | ⌨️ Enter/Espaço//</div>', unsafe_allow_html=True)
