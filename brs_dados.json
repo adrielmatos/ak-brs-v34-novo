@@ -2851,6 +2851,14 @@
       "retorno_data": null
     }
   ],
-  "pausas": [],
+  "pausas": [
+    {
+      "tipo": "Pausa",
+      "inicio": "09/09 02:11:05",
+      "fim": "09/09 02:11:07",
+      "duracao_seg": 2,
+      "duracao_txt": "00:02"
+    }
+  ],
   "bloqueados": []
 }
