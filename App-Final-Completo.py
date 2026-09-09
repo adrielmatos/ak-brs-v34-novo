@@ -1,282 +1,1429 @@
-import streamlit as st
-import pandas as pd
-import hashlib
 import base64
+import html
 import json
-import requests
-from datetime import datetime, timedelta, date, time
-from io import BytesIO
-import urllib.parse
 import os
+import re
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Discadora Eletrônica A&K", layout="wide", page_icon="📞")
+import pandas as pd
+import requests
+import streamlit as st
 
-BANCO_EMOJI = {"PAN":"🟢","SAFRA":"🟠","BMG":"🔵","C6":"⚫","ITAU":"🔷","DEFAULT":"⚪"}
+# ============================================================
+# CONFIGURAÇÃO
+# ============================================================
+st.set_page_config(
+    page_title="Discadora Eletrônica A&K",
+    page_icon="📞",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
+APP_VERSION = "3.0"
+LOCAL_FILE = "brs_dados_local.json"
+GITHUB_PATH = "brs_dados.json"
+
+BANCO_EMOJI = {
+    "PAN": "🟢",
+    "SAFRA": "🟠",
+    "BMG": "🔵",
+    "C6": "⚫",
+    "ITAU": "🔷",
+    "ITAÚ": "🔷",
+    "OLE": "🟡",
+    "PARANÁ": "🟣",
+    "DEFAULT": "⚪",
+}
+
+STATUS_LABELS = {
+    "pendente": "Pendente",
+    "atendido": "Atendido",
+    "nao_atendeu": "Não atendeu",
+    "retorno_futuro": "Retorno",
+    "venda_finalizada": "Venda",
+    "arquivado": "Arquivado",
+}
+
+STATUS_COLORS = {
+    "pendente": "#00e5ff",
+    "atendido": "#00ff88",
+    "nao_atendeu": "#ffab00",
+    "retorno_futuro": "#7c4dff",
+    "venda_finalizada": "#ff6d00",
+    "arquivado": "#78909c",
+}
+
+
+# ============================================================
+# ESTILO
+# ============================================================
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root {
+    --bg: #070a10;
+    --panel: rgba(18, 23, 34, .78);
+    --panel-2: rgba(255, 255, 255, .035);
+    --line: rgba(255,255,255,.08);
+    --cyan: #00e5ff;
+    --green: #00ff88;
+    --gold: #ffab00;
+    --purple: #8b5cf6;
+}
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at 8% 8%, rgba(0,229,255,.08), transparent 28%),
+        radial-gradient(circle at 88% 12%, rgba(124,77,255,.08), transparent 24%),
+        radial-gradient(circle at 50% 90%, rgba(0,255,136,.05), transparent 30%),
+        var(--bg);
+    color: #f7f9fc;
+}
+
+header[data-testid="stHeader"] {
+    background: transparent;
+}
+
+section[data-testid="stSidebar"] {
+    background: rgba(8, 11, 18, .92) !important;
+    border-right: 1px solid var(--line);
+}
+
+.block-container {
+    padding-top: 1.1rem;
+    padding-bottom: 2rem;
+}
+
+div[data-testid="stButton"] > button,
+div[data-testid="stDownloadButton"] > button {
+    border-radius: 11px;
+    border: 1px solid rgba(255,255,255,.09);
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
+    color: #fff;
+    min-height: 40px;
+    font-weight: 700;
+    transition: all .18s ease;
+}
+
+div[data-testid="stButton"] > button:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0,229,255,.35);
+    box-shadow: 0 8px 22px rgba(0,229,255,.12);
+}
+
+div[data-testid="stButton"] > button[kind="primary"] {
+    background: linear-gradient(135deg, #00e5ff, #00ff88);
+    color: #041014;
+    border: 0;
+}
+
+div[data-baseweb="input"] input,
+div[data-baseweb="select"] > div,
+textarea {
+    border-radius: 10px !important;
+}
+
+div[data-testid="stMetric"] {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 15px;
+    padding: 10px 12px;
+}
+
+.ak-header {
+    padding: 18px 20px;
+    border: 1px solid rgba(0,229,255,.15);
+    border-radius: 20px;
+    background:
+        linear-gradient(135deg, rgba(0,229,255,.06), rgba(0,255,136,.03)),
+        rgba(18,23,34,.74);
+    box-shadow: 0 14px 45px rgba(0,0,0,.24);
+    margin-bottom: 15px;
+}
+
+.ak-brand {
+    display:flex;
+    align-items:center;
+    gap:14px;
+}
+
+.ak-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    background:linear-gradient(135deg,#00e5ff,#00ff88);
+    color:#041014;
+    box-shadow: 0 0 28px rgba(0,229,255,.22);
+}
+
+.ak-title {
+    margin:0;
+    font-size: 21px;
+    font-weight: 800;
+}
+
+.ak-sub {
+    margin:2px 0 0;
+    opacity:.55;
+    font-size:11px;
+}
+
+.ak-online {
+    padding:7px 12px;
+    border-radius:999px;
+    font-size:10px;
+    font-weight:800;
+    border:1px solid rgba(0,255,136,.24);
+    background:rgba(0,255,136,.07);
+    color:#00ff88;
+}
+
+.card {
+    padding:16px;
+    border-radius:16px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    box-shadow:0 10px 32px rgba(0,0,0,.18);
+}
+
+.lead-card {
+    padding:18px;
+    border-radius:18px;
+    border:1px solid rgba(0,229,255,.13);
+    background:
+        linear-gradient(135deg, rgba(0,229,255,.055), rgba(0,255,136,.02)),
+        var(--panel);
+}
+
+.lead-phone {
+    font-family:'JetBrains Mono', monospace;
+    font-size:28px;
+    font-weight:800;
+    letter-spacing:.5px;
+    background:linear-gradient(90deg,#00e5ff,#00ff88);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+}
+
+.queue-item {
+    padding:11px 12px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,.06);
+    background:rgba(255,255,255,.025);
+    margin-bottom:8px;
+}
+
+.queue-selected {
+    border-color:rgba(0,229,255,.38);
+    background:linear-gradient(135deg, rgba(0,229,255,.10), rgba(0,255,136,.05));
+}
+
+.venda-card {
+    padding:15px;
+    border-radius:15px;
+    border:1px solid rgba(255,171,0,.22);
+    background:linear-gradient(135deg, rgba(255,171,0,.08), rgba(255,109,0,.05));
+    margin-bottom:10px;
+}
+
+.status-pill {
+    display:inline-block;
+    padding:4px 8px;
+    border-radius:999px;
+    font-size:10px;
+    font-weight:800;
+    border:1px solid rgba(255,255,255,.10);
+}
+
+.small-muted {
+    opacity:.58;
+    font-size:11px;
+}
+
+.section-title {
+    font-size:16px;
+    font-weight:800;
+    margin:4px 0 12px;
+}
+
+.login-shell {
+    max-width: 470px;
+    margin: 8vh auto 0;
+    padding: 30px;
+    border-radius: 24px;
+    border: 1px solid rgba(0,255,136,.17);
+    background: rgba(12,16,25,.82);
+    box-shadow: 0 25px 70px rgba(0,0,0,.42);
+    backdrop-filter: blur(18px);
+}
+
+.login-icon {
+    width:72px;
+    height:72px;
+    margin:0 auto 16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:20px;
+    background:linear-gradient(135deg,#00e5ff,#00ff88);
+    color:#041014;
+    font-size:32px;
+}
+
+[data-testid="stDataFrame"] {
+    border-radius: 14px;
+    overflow: hidden;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# UTILITÁRIOS
+# ============================================================
+def clean_text(value) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def normalize_digits(value) -> str:
+    return re.sub(r"\D+", "", clean_text(value))
+
+
+def phone_display(value) -> str:
+    d = normalize_digits(value)
+    if len(d) == 11:
+        return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+    return d or "Sem telefone"
+
+
+def calculate_ddd(phone) -> str:
+    d = normalize_digits(phone)
+    return d[:2] if len(d) >= 10 else ""
+
+
+def now_str() -> str:
+    return datetime.now().strftime("%d/%m %H:%M")
+
+
+def now_full() -> str:
+    return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+
+def status_label(status) -> str:
+    return STATUS_LABELS.get(status, clean_text(status) or "Pendente")
+
+
+def bank_emoji(bank) -> str:
+    key = clean_text(bank).upper()
+    return BANCO_EMOJI.get(key, BANCO_EMOJI["DEFAULT"])
+
+
+def safe_int(value, default=0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def default_lead(lead, idx=0):
+    if not isinstance(lead, dict):
+        lead = {}
+
+    telefone = normalize_digits(lead.get("telefone", lead.get("telefone1", "")))
+    nome = clean_text(lead.get("nome", lead.get("name", ""))) or f"Lead {idx + 1}"
+    banco = clean_text(lead.get("banco", lead.get("bank", ""))).upper() or "NÃO INFORMADO"
+
+    result = dict(lead)
+    result["id"] = clean_text(lead.get("id")) or f"lead_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{idx}"
+    result["nome"] = nome
+    result["banco"] = banco
+    result["telefone"] = telefone
+    result["ddd"] = clean_text(lead.get("ddd")) or calculate_ddd(telefone)
+    result["status"] = clean_text(lead.get("status")) or "pendente"
+    if result["status"] not in STATUS_LABELS:
+        result["status"] = "pendente"
+    result["tentativas"] = safe_int(lead.get("tentativas"), 0)
+    result["ultima"] = clean_text(lead.get("ultima")) or "Nunca"
+    result["notas_cliente"] = clean_text(lead.get("notas_cliente"))
+    result["observacao"] = clean_text(lead.get("observacao"))
+    result["lote"] = clean_text(lead.get("lote"))
+    result["retorno_hora"] = clean_text(lead.get("retorno_hora"))
+    result["arquivado_motivo"] = clean_text(lead.get("arquivado_motivo"))
+    result["historico"] = lead.get("historico") if isinstance(lead.get("historico"), list) else []
+    return result
+
+
+def migrate_data(data):
+    if not isinstance(data, dict):
+        data = {}
+    leads_raw = data.get("leads", [])
+    leads = [default_lead(item, i) for i, item in enumerate(leads_raw if isinstance(leads_raw, list) else [])]
+    blocklist = set(clean_text(x) for x in (data.get("bloqueados") or []))
+    lotes = data.get("lotes") if isinstance(data.get("lotes"), list) else []
+    nao_perturbe = data.get("nao_perturbe") if isinstance(data.get("nao_perturbe"), list) else []
+    meta_diaria = safe_int(data.get("meta_diaria"), 20)
+    return leads, blocklist, lotes, nao_perturbe, meta_diaria
+
+
+# ============================================================
+# PERSISTÊNCIA LOCAL / GITHUB
+# ============================================================
 try:
-    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-    GITHUB_REPO = st.secrets["GITHUB_REPO"]
+    GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
+    GITHUB_REPO = st.secrets.get("GITHUB_REPO")
+    APP_PASSWORD = st.secrets.get("APP_PASSWORD", "1234")
 except Exception:
     GITHUB_TOKEN = None
     GITHUB_REPO = None
+    APP_PASSWORD = "1234"
 
-GITHUB_PATH = "brs_dados.json"
-GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}" if GITHUB_REPO else None
+GITHUB_API = (
+    f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
+    if GITHUB_REPO and GITHUB_TOKEN
+    else None
+)
 
+
+def load_json_local():
+    if not os.path.exists(LOCAL_FILE):
+        return {}
+    try:
+        with open(LOCAL_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def carregar_dados():
+    if not GITHUB_API:
+        return migrate_data(load_json_local())
+
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    try:
+        response = requests.get(GITHUB_API, headers=headers, timeout=15)
+        if response.status_code == 404:
+            return migrate_data({})
+        response.raise_for_status()
+
+        content = response.json()
+        sha = content.get("sha")
+        encoded = content.get("content", "")
+        if not encoded:
+            return migrate_data({})
+
+        raw = base64.b64decode(encoded).decode("utf-8")
+        data = json.loads(raw)
+        st.session_state["_gh_sha"] = sha
+        return migrate_data(data)
+
+    except (requests.RequestException, ValueError, json.JSONDecodeError):
+        # Em caso de falha de rede, preserva operação usando cópia local.
+        return migrate_data(load_json_local())
+
+
+def salvar_dados():
+    payload = {
+        "leads": st.session_state.get("leads", []),
+        "bloqueados": sorted(st.session_state.get("blocklist", set())),
+        "lotes": st.session_state.get("lotes", []),
+        "nao_perturbe": st.session_state.get("nao_perturbe", []),
+        "meta_diaria": safe_int(st.session_state.get("meta_diaria", 20), 20),
+        "atualizado_em": now_full(),
+    }
+
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+
+    if not GITHUB_API:
+        try:
+            with open(LOCAL_FILE, "w", encoding="utf-8") as file:
+                file.write(text)
+            return True
+        except OSError as exc:
+            st.error(f"Falha ao salvar localmente: {exc}")
+            return False
+
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
+    body = {
+        "message": f"A&K Discadora {now_full()}",
+        "content": base64.b64encode(text.encode("utf-8")).decode("utf-8"),
+    }
+    if st.session_state.get("_gh_sha"):
+        body["sha"] = st.session_state["_gh_sha"]
+
+    try:
+        response = requests.put(GITHUB_API, headers=headers, json=body, timeout=20)
+        if response.status_code not in (200, 201):
+            st.error(f"GitHub recusou o salvamento ({response.status_code}).")
+            return False
+
+        result = response.json()
+        st.session_state["_gh_sha"] = result.get("content", {}).get("sha")
+        # Cópia local de segurança.
+        with open(LOCAL_FILE, "w", encoding="utf-8") as file:
+            file.write(text)
+        return True
+
+    except (requests.RequestException, OSError, ValueError) as exc:
+        # Não perde alterações locais se a API estiver indisponível.
+        try:
+            with open(LOCAL_FILE, "w", encoding="utf-8") as file:
+                file.write(text)
+        except OSError:
+            pass
+        st.warning(f"GitHub indisponível; cópia local preservada. {exc}")
+        return False
+
+
+# ============================================================
+# LOGIN
+# ============================================================
 def checar_login():
     if st.session_state.get("logado"):
         return True
-    st.markdown("<div style='text-align:center;padding:10px;'><h2>Discadora Eletrônica<br><span style='color:#00e5ff;'>A&K</span></h2></div>", unsafe_allow_html=True)
-    c1,c2,c3=st.columns([1,3,1])
-    with c2:
-        senha=st.text_input("Senha", type="password", key="senha_login")
-        if st.button("Entrar", type="primary", use_container_width=True, key="btn_login"):
-            senha_correta=st.secrets.get("APP_PASSWORD",None) if GITHUB_TOKEN else "1234"
-            if senha==senha_correta:
-                st.session_state.logado=True
-                st.rerun()
-            else:
-                st.error("Senha incorreta")
+
+    st.markdown(
+        """
+        <div class="login-shell">
+            <div class="login-icon">📞</div>
+            <h1 style="text-align:center;margin:0;font-size:28px;">Discadora Eletrônica <span style="color:#00ff88;">A&K</span></h1>
+            <p style="text-align:center;opacity:.55;font-size:12px;letter-spacing:1.7px;text-transform:uppercase;">
+                Gestão inteligente de leads
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container():
+        _, center, _ = st.columns([1, 2, 1])
+        with center:
+            senha = st.text_input(
+                "Senha",
+                type="password",
+                placeholder="Digite sua senha",
+                key="senha_login",
+            )
+            if st.button("🚀 Acessar sistema", type="primary", use_container_width=True):
+                if senha == str(APP_PASSWORD):
+                    st.session_state.logado = True
+                    st.rerun()
+                else:
+                    st.error("Senha incorreta.")
     return False
 
+
+# Mantém o comportamento original: login apenas quando credenciais de produção existem.
 if GITHUB_TOKEN:
     if not checar_login():
         st.stop()
 
-def carregar_dados():
-    if not GITHUB_API or not GITHUB_TOKEN:
-        if os.path.exists("brs_dados_local.json"):
-            try:
-                with open("brs_dados_local.json","r",encoding="utf-8") as f:
-                    d=json.load(f)
-                return d.get("leads",[]), set(d.get("bloqueados",[])), d.get("lotes",[]), d.get("nao_perturbe",[]), d.get("meta_diaria",20)
-            except Exception:
-                return [], set(), [], [], 20
-        return [], set(), [], [], 20
-    try:
-        headers={"Authorization": f"token {GITHUB_TOKEN}"}
-        r=requests.get(GITHUB_API, headers=headers)
-        if r.status_code==200:
-            conteudo=r.json()
-            st.session_state["_gh_sha"]=conteudo["sha"]
-            dados=json.loads(base64.b64decode(conteudo["content"]).decode("utf-8"))
-            return dados.get("leads",[]), set(dados.get("bloqueados",[])), dados.get("lotes",[]), dados.get("nao_perturbe",[]), dados.get("meta_diaria",20)
-        elif r.status_code==404:
-            st.session_state["_gh_sha"]=None
-            return [], set(), [], [], 20
-        else:
-            return [], set(), [], [], 20
-    except Exception:
-        return [], set(), [], [], 20
 
-def salvar_dados():
-    try:
-        payload={"leads":st.session_state.leads,"bloqueados":list(st.session_state.blocklist),"lotes":st.session_state.lotes,"nao_perturbe":st.session_state.nao_perturbe,"meta_diaria":st.session_state.get("meta_diaria",20)}
-        conteudo_str=json.dumps(payload, ensure_ascii=False, indent=2)
-        if not GITHUB_API or not GITHUB_TOKEN:
-            with open("brs_dados_local.json","w",encoding="utf-8") as f:
-                f.write(conteudo_str)
-            return
-        conteudo_b64=base64.b64encode(conteudo_str.encode("utf-8")).decode("utf-8")
-        headers={"Authorization": f"token {GITHUB_TOKEN}"}
-        body={"message": f"A&K {datetime.now().strftime('%d/%m %H:%M:%S')}", "content": conteudo_b64}
-        if st.session_state.get("_gh_sha"):
-            body["sha"]=st.session_state["_gh_sha"]
-        r=requests.put(GITHUB_API, headers=headers, json=body)
-        if r.status_code in (200,201):
-            st.session_state["_gh_sha"]=r.json()["content"]["sha"]
-    except Exception as e:
-        st.warning(f"Erro salvar: {e}")
-
+# ============================================================
+# SESSION STATE
+# ============================================================
 if "leads" not in st.session_state:
-    leads, blocklist, lotes, nao_perturbe, meta_diaria = carregar_dados()
-    for l in leads:
-        l.setdefault("notas_cliente","")
-        l.setdefault("arquivado_motivo","")
-        l.setdefault("retorno_hora","")
-        l.setdefault("ddd", l.get("telefone","")[:2] if len(l.get("telefone",""))>=10 else "")
-        l.setdefault("lote","")
-        l.setdefault("tentativas",0)
-        l.setdefault("ultima","Nunca")
-        l.setdefault("historico",[])
-    st.session_state.leads=leads
-    st.session_state.blocklist=blocklist
-    st.session_state.lotes=lotes
-    st.session_state.nao_perturbe=nao_perturbe
-    st.session_state.meta_diaria=meta_diaria
-    st.session_state.selected_id=None
-    st.session_state.filtro_banco="TODOS"
-    st.session_state.filtro_status="PENDENTES"
-    st.session_state.filtro_ddd="TODOS"
-    st.session_state.busca_global=""
-    st.session_state.ordenar_por="NUNCA LIGADOS PRIMEIRO"
+    (
+        st.session_state.leads,
+        st.session_state.blocklist,
+        st.session_state.lotes,
+        st.session_state.nao_perturbe,
+        st.session_state.meta_diaria,
+    ) = carregar_dados()
 
-def tabular(sel, status_final, obs):
-    sel["status"]=status_final
-    sel["ultima"]=datetime.now().strftime("%d/%m %H:%M")
-    sel["tentativas"]=sel.get("tentativas",0)+1
-    sel["observacao"]=obs
-    hist=sel.get("historico") or []
-    hist.append({"data":datetime.now().strftime("%d/%m %H:%M:%S"),"acao":status_final,"tab":obs})
-    sel["historico"]=hist
+if "selected_id" not in st.session_state:
+    st.session_state.selected_id = None
+if "busca_global" not in st.session_state:
+    st.session_state.busca_global = ""
+if "filtro_banco" not in st.session_state:
+    st.session_state.filtro_banco = "TODOS"
+if "filtro_status" not in st.session_state:
+    st.session_state.filtro_status = "PENDENTES"
+if "filtro_ddd" not in st.session_state:
+    st.session_state.filtro_ddd = "TODOS"
+if "ordenar_por" not in st.session_state:
+    st.session_state.ordenar_por = "NUNCA LIGADOS PRIMEIRO"
+
+# Re-migração defensiva: evita KeyError quando a base vier de versões antigas.
+st.session_state.leads = [
+    default_lead(lead, i) for i, lead in enumerate(st.session_state.leads)
+]
+
+
+# ============================================================
+# OPERAÇÕES DE NEGÓCIO
+# ============================================================
+def get_lead(lead_id):
+    return next(
+        (lead for lead in st.session_state.leads if lead.get("id") == lead_id),
+        None,
+    )
+
+
+def registrar_historico(lead, acao, texto=""):
+    history = lead.get("historico")
+    if not isinstance(history, list):
+        history = []
+    history.append(
+        {
+            "data": now_full(),
+            "acao": acao,
+            "texto": clean_text(texto),
+        }
+    )
+    lead["historico"] = history[-100:]
+
+
+def atualizar_lead(lead, status, obs="", extra=None):
+    if status != "arquivado":
+        lead["tentativas"] = safe_int(lead.get("tentativas"), 0) + 1
+
+    lead["status"] = status
+    lead["ultima"] = now_str()
+    lead["observacao"] = clean_text(obs)
+    if extra:
+        lead.update(extra)
+
+    registrar_historico(lead, status, obs)
     salvar_dados()
+
+    if status == "pendente":
+        st.session_state.selected_id = lead.get("id")
+    else:
+        pendentes = [
+            x for x in st.session_state.leads
+            if x.get("status") == "pendente"
+        ]
+        pendentes.sort(
+            key=lambda x: (
+                0 if x.get("ultima") == "Nunca" else 1,
+                safe_int(x.get("tentativas"), 0),
+                x.get("nome", "").lower(),
+            )
+        )
+        st.session_state.selected_id = pendentes[0]["id"] if pendentes else None
+
     st.rerun()
 
-total=len(st.session_state.leads)
-pend=len([l for l in st.session_state.leads if l["status"]=="pendente"])
-arquivados=len([l for l in st.session_state.leads if l["status"]=="arquivado"])
-vendas=len([l for l in st.session_state.leads if l["status"]=="venda_finalizada"])
-retornos_total=len([l for l in st.session_state.leads if l["status"]=="retorno_futuro"])
-
-st.markdown(f"""
-<div style="background:linear-gradient(135deg,#0f0c29,#302b63);padding:16px;border-radius:12px;color:white;margin-bottom:10px;">
-<h1 style="margin:0;font-size:19px;">Discadora Eletrônica <span style="color:#00e5ff;">A&K</span></h1>
-<p style="margin:0;opacity:0.6;font-size:11px;">{total} leads • {pend} pendentes • {arquivados} arquivados • {datetime.now().strftime('%d/%m %H:%M')}</p>
-</div>
-""", unsafe_allow_html=True)
-
-c1,c2,c3,c4,c5=st.columns(5)
-with c1: st.metric("TOTAL", total)
-with c2: st.metric("PENDENTES", pend)
-with c3: st.metric("VENDAS", vendas)
-with c4: st.metric("RETORNOS", retornos_total)
-with c5: st.metric("ARQUIV", arquivados)
-
-with st.sidebar:
-    st.markdown("### 🔍 Filtros")
-    st.session_state.busca_global=st.text_input("Busca", value=st.session_state.busca_global, key="busca_side")
-    bancos=sorted(list(set([l["banco"] for l in st.session_state.leads]))) if st.session_state.leads else []
-    st.session_state.filtro_banco=st.selectbox("Banco", ["TODOS"]+bancos, key="f_banco_side")
-    st.session_state.filtro_status=st.selectbox("Status", ["PENDENTES","ATENDIDOS","NÃO ATENDEU","RETORNOS","VENDAS","ARQUIVADOS","TODOS"], key="f_status_side")
-    ddds=sorted(list(set([l.get("ddd","") for l in st.session_state.leads if l.get("ddd")]))) if st.session_state.leads else []
-    st.session_state.filtro_ddd=st.selectbox("DDD", ["TODOS"]+ddds, key="f_ddd_side")
-    if st.button("🧹 Limpar Filtros", use_container_width=True, key="clear_side"):
-        st.session_state.filtro_banco="TODOS"
-        st.session_state.filtro_status="PENDENTES"
-        st.session_state.filtro_ddd="TODOS"
-        st.session_state.busca_global=""
-        st.session_state.selected_id=None
-        st.rerun()
-
-tab1, tab_ret, tab_lotes, tab_rel, tab_arq = st.tabs(["🎯 DISCADOR", "⏰ RETORNOS", "📦 LOTES", "📊 RELATÓRIOS", "📁 ARQUIVADOS"])
 
 def filtrar_lista(status_filtro):
-    lista=[]
-    for l in st.session_state.leads:
-        if status_filtro!="TODOS":
-            if status_filtro=="PENDENTES" and l["status"]!="pendente":
-                continue
-            if status_filtro=="ATENDIDOS" and l["status"]!="atendido":
-                continue
-            if status_filtro=="NÃO ATENDEU" and l["status"]!="nao_atendeu":
-                continue
-            if status_filtro=="RETORNOS" and l["status"]!="retorno_futuro":
-                continue
-            if status_filtro=="VENDAS" and l["status"]!="venda_finalizada":
-                continue
-            if status_filtro=="ARQUIVADOS" and l["status"]!="arquivado":
-                continue
-        if st.session_state.filtro_banco!="TODOS" and l["banco"]!=st.session_state.filtro_banco:
+    lista = []
+
+    for lead in st.session_state.leads:
+        status = lead.get("status", "pendente")
+
+        status_ok = True
+        if status_filtro != "TODOS":
+            mapping = {
+                "PENDENTES": {"pendente"},
+                "ATENDIDOS": {"atendido"},
+                "NÃO ATENDEU": {"nao_atendeu"},
+                "RETORNOS": {"retorno_futuro"},
+                "VENDAS": {"venda_finalizada"},
+                "ARQUIVADOS": {"arquivado"},
+            }
+            status_ok = status in mapping.get(status_filtro, set())
+
+        if not status_ok:
             continue
-        if st.session_state.filtro_ddd!="TODOS" and l.get("ddd","")!=st.session_state.filtro_ddd:
+
+        bank = clean_text(lead.get("banco")).upper()
+        if st.session_state.filtro_banco != "TODOS" and bank != st.session_state.filtro_banco:
             continue
-        busca=st.session_state.busca_global
-        if busca and busca.lower() not in l["nome"].lower() and busca.lower() not in l["banco"].lower() and busca.lower() not in l["telefone"]:
+
+        if st.session_state.filtro_ddd != "TODOS" and lead.get("ddd", "") != st.session_state.filtro_ddd:
             continue
-        lista.append(l)
+
+        search = clean_text(st.session_state.busca_global).lower()
+        if search:
+            haystack = " ".join(
+                [
+                    clean_text(lead.get("nome")),
+                    clean_text(lead.get("banco")),
+                    normalize_digits(lead.get("telefone")),
+                    clean_text(lead.get("observacao")),
+                    clean_text(lead.get("notas_cliente")),
+                    clean_text(lead.get("lote")),
+                ]
+            ).lower()
+            if search not in haystack:
+                continue
+
+        if lead.get("id") in st.session_state.blocklist:
+            continue
+
+        lista.append(lead)
+
+    order = st.session_state.ordenar_por
+    if order == "NUNCA LIGADOS PRIMEIRO":
+        lista.sort(
+            key=lambda x: (
+                0 if x.get("ultima") == "Nunca" else 1,
+                safe_int(x.get("tentativas"), 0),
+                x.get("nome", "").lower(),
+            )
+        )
+    elif order == "MENOS TENTATIVAS":
+        lista.sort(key=lambda x: (safe_int(x.get("tentativas")), x.get("nome", "").lower()))
+    elif order == "NOME A-Z":
+        lista.sort(key=lambda x: x.get("nome", "").lower())
+    elif order == "MAIS RECENTES":
+        lista.sort(key=lambda x: x.get("ultima", ""), reverse=True)
+
     return lista
 
-with tab1:
-    lista=filtrar_lista(st.session_state.filtro_status)
-    st.markdown(f"**📋 Fila {st.session_state.filtro_status} ({len(lista)})**")
-    col_lista,col_det=st.columns([1,2])
+
+# ============================================================
+# KPIs
+# ============================================================
+total = len(st.session_state.leads)
+pendentes = sum(x.get("status") == "pendente" for x in st.session_state.leads)
+nunca = sum(
+    x.get("status") == "pendente" and x.get("ultima") == "Nunca"
+    for x in st.session_state.leads
+)
+vendas = sum(x.get("status") == "venda_finalizada" for x in st.session_state.leads)
+vendas_hoje = sum(
+    x.get("status") == "venda_finalizada"
+    and datetime.now().strftime("%d/%m") in x.get("ultima", "")
+    for x in st.session_state.leads
+)
+retornos = sum(x.get("status") == "retorno_futuro" for x in st.session_state.leads)
+arquivados = sum(x.get("status") == "arquivado" for x in st.session_state.leads)
+atendidos = sum(x.get("status") == "atendido" for x in st.session_state.leads)
+
+
+# ============================================================
+# HEADER
+# ============================================================
+st.markdown(
+    f"""
+    <div class="ak-header">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <div class="ak-brand">
+                <div class="ak-logo">📞</div>
+                <div>
+                    <div class="ak-title">Discadora Eletrônica <span style="color:#00ff88;">A&K</span></div>
+                    <div class="ak-sub">Painel de atendimento • v{APP_VERSION} • atualizado {now_str()}</div>
+                </div>
+            </div>
+            <div class="ak-online">● ONLINE • {total} LEADS</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+m1.metric("Total", total)
+m2.metric("Pendentes", pendentes)
+m3.metric("Nunca", nunca)
+m4.metric("Atendidos", atendidos)
+m5.metric("Vendas", vendas)
+m6.metric("Retornos", retornos)
+m7.metric("Arquivados", arquivados)
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="card" style="margin-bottom:12px;">
+            <b>📞 A&K Discadora</b><br>
+            <span class="small-muted">Gestão de leads e follow-up</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.session_state.busca_global = st.text_input(
+        "Busca",
+        value=st.session_state.busca_global,
+        placeholder="Nome, banco, telefone, lote...",
+    )
+
+    bank_values = sorted(
+        {
+            clean_text(lead.get("banco")).upper()
+            for lead in st.session_state.leads
+            if clean_text(lead.get("banco"))
+        }
+    )
+    ddd_values = sorted(
+        {
+            clean_text(lead.get("ddd"))
+            for lead in st.session_state.leads
+            if clean_text(lead.get("ddd"))
+        }
+    )
+
+    st.session_state.filtro_banco = st.selectbox(
+        "🏦 Banco",
+        ["TODOS"] + bank_values,
+        index=(
+            ["TODOS"] + bank_values
+        ).index(st.session_state.filtro_banco)
+        if st.session_state.filtro_banco in ["TODOS"] + bank_values
+        else 0,
+    )
+
+    st.session_state.filtro_status = st.selectbox(
+        "📊 Status",
+        [
+            "PENDENTES",
+            "ATENDIDOS",
+            "NÃO ATENDEU",
+            "RETORNOS",
+            "VENDAS",
+            "ARQUIVADOS",
+            "TODOS",
+        ],
+        index=[
+            "PENDENTES",
+            "ATENDIDOS",
+            "NÃO ATENDEU",
+            "RETORNOS",
+            "VENDAS",
+            "ARQUIVADOS",
+            "TODOS",
+        ].index(st.session_state.filtro_status)
+        if st.session_state.filtro_status in {
+            "PENDENTES",
+            "ATENDIDOS",
+            "NÃO ATENDEU",
+            "RETORNOS",
+            "VENDAS",
+            "ARQUIVADOS",
+            "TODOS",
+        }
+        else 0,
+    )
+
+    st.session_state.filtro_ddd = st.selectbox(
+        "📍 DDD",
+        ["TODOS"] + ddd_values,
+        index=(
+            ["TODOS"] + ddd_values
+        ).index(st.session_state.filtro_ddd)
+        if st.session_state.filtro_ddd in ["TODOS"] + ddd_values
+        else 0,
+    )
+
+    st.session_state.ordenar_por = st.selectbox(
+        "↕️ Ordenar",
+        [
+            "NUNCA LIGADOS PRIMEIRO",
+            "MENOS TENTATIVAS",
+            "NOME A-Z",
+            "MAIS RECENTES",
+        ],
+    )
+
+    if st.button("🧹 Limpar filtros", use_container_width=True):
+        st.session_state.busca_global = ""
+        st.session_state.filtro_banco = "TODOS"
+        st.session_state.filtro_status = "PENDENTES"
+        st.session_state.filtro_ddd = "TODOS"
+        st.session_state.ordenar_por = "NUNCA LIGADOS PRIMEIRO"
+        st.session_state.selected_id = None
+        st.rerun()
+
+    st.divider()
+
+    st.number_input(
+        "🎯 Meta diária de vendas",
+        min_value=1,
+        max_value=1000,
+        value=safe_int(st.session_state.meta_diaria, 20),
+        key="meta_diaria",
+    )
+
+    target = safe_int(st.session_state.meta_diaria, 20)
+    progress = min(vendas_hoje / target, 1.0) if target else 0.0
+    st.progress(progress, text=f"Meta hoje: {vendas_hoje}/{target}")
+
+    if st.button("💾 Salvar agora", use_container_width=True):
+        if salvar_dados():
+            st.success("Dados salvos.")
+
+    if GITHUB_API:
+        st.caption("☁️ Sincronização GitHub ativa")
+    else:
+        st.caption(f"💾 Armazenamento local: {LOCAL_FILE}")
+
+
+# ============================================================
+# ABAS
+# ============================================================
+tab_disc, tab_ret, tab_vendas, tab_arq, tab_lotes, tab_rel = st.tabs(
+    [
+        "🎯 Discador",
+        "⏰ Retornos",
+        "💰 Vendas",
+        "📁 Arquivados",
+        "📦 Lotes / Importar",
+        "📊 Relatórios",
+    ]
+)
+
+
+# ============================================================
+# DISCADOR
+# ============================================================
+with tab_disc:
+    lista = filtrar_lista(st.session_state.filtro_status)
+
+    col_lista, col_det = st.columns([0.95, 2.05], gap="large")
+
     with col_lista:
+        st.markdown(
+            f"""
+            <div class="card" style="margin-bottom:12px;">
+                <div class="section-title">📋 Fila {html.escape(st.session_state.filtro_status)} <span class="small-muted">({len(lista)})</span></div>
+                <div class="small-muted">Clique em um lead para abrir o painel de atendimento.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         if not lista:
-            st.info("Nenhum lead")
+            st.info("Nenhum lead encontrado com os filtros atuais.")
         else:
-            for lead in lista[:40]:
-                is_sel=lead["id"]==st.session_state.selected_id
-                label=f"{'👉' if is_sel else '⚪'} {lead['nome'][:12]} | {lead['banco']} | T{lead.get('tentativas',0)}"
-                if st.button(label, key=f"tab1_{lead['id']}", use_container_width=True, type="primary" if is_sel else "secondary"):
-                    st.session_state.selected_id=lead["id"]
+            for lead in lista[:80]:
+                selected = lead.get("id") == st.session_state.selected_id
+                label = (
+                    f"{'👉' if selected else '○'} "
+                    f"{clean_text(lead.get('nome'))[:22]} • "
+                    f"{bank_emoji(lead.get('banco'))} "
+                    f"{clean_text(lead.get('banco'))[:10]} • "
+                    f"T{safe_int(lead.get('tentativas'))}"
+                )
+                if st.button(
+                    label,
+                    key=f"lead_{lead['id']}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state.selected_id = lead["id"]
                     st.rerun()
+
     with col_det:
-        if not st.session_state.selected_id:
-            st.info("Selecione um lead")
+        sel = get_lead(st.session_state.selected_id)
+
+        if not sel:
+            st.markdown(
+                """
+                <div class="lead-card" style="text-align:center;padding:62px 20px;">
+                    <div style="font-size:54px;">📞</div>
+                    <div style="font-size:18px;font-weight:800;">Selecione um lead</div>
+                    <div class="small-muted">A fila ao lado mostra quem está pronto para atendimento.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
-            sel=next((l for l in st.session_state.leads if l["id"]==st.session_state.selected_id), None)
-            if sel:
-                st.markdown(f"### {sel['nome']} | {sel['banco']} | {sel['telefone']}")
-                st.code(sel['telefone'])
-                st.markdown(f'<a href="tel:{sel["telefone"]}" style="display:block;background:#00ff88;color:#000;padding:12px;border-radius:8px;text-align:center;font-weight:800;text-decoration:none;">📱 LIGAR {sel["telefone"]}</a>', unsafe_allow_html=True)
-                c1,c2,c3,c4=st.columns(4)
-                with c1:
-                    if st.button("✅ Atendeu", key=f"at_{sel['id']}", use_container_width=True, type="primary"):
-                        tabular(sel,"atendido","Atendeu")
-                with c2:
-                    if st.button("📬 Caixa", key=f"cx_{sel['id']}", use_container_width=True):
-                        tabular(sel,"nao_atendeu","Caixa postal")
-                with c3:
-                    if st.button("📵 Desligado", key=f"des_{sel['id']}", use_container_width=True):
-                        tabular(sel,"nao_atendeu","Desligado")
-                with c4:
-                    if st.button("💰 Venda", key=f"vd_{sel['id']}", use_container_width=True):
-                        tabular(sel,"venda_finalizada","Venda")
-                c5,c6=st.columns(2)
-                with c5:
-                    if st.button("📁 Arquivar", key=f"arq_{sel['id']}", use_container_width=True):
-                        sel["status"]="arquivado"
-                        salvar_dados()
-                        st.rerun()
-                with c6:
-                    if st.button("🔄 Pendentes", key=f"vol_{sel['id']}", use_container_width=True):
-                        sel["status"]="pendente"
-                        salvar_dados()
-                        st.rerun()
-                # Observacoes - FIX INDENTACAO
-                st.markdown("**📝 Observacoes**")
-                notas_val=sel.get("notas_cliente","")
-                novas_notas=st.text_area("Obs", value=notas_val, key=f"notas_{sel['id']}", label_visibility="collapsed", height=80)
-                if st.button("💾 Salvar Obs", key=f"save_obs_{sel['id']}", use_container_width=True):
-                    sel["notas_cliente"]=novas_notas
-                    salvar_dados()
-                    st.success("Salvo!")
+            status = sel.get("status", "pendente")
+            color = STATUS_COLORS.get(status, "#00e5ff")
 
+            st.markdown(
+                f"""
+                <div class="lead-card">
+                    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                        <div>
+                            <div style="font-size:18px;font-weight:800;">
+                                {bank_emoji(sel.get("banco"))} {html.escape(sel.get("nome",""))}
+                            </div>
+                            <div class="small-muted">🏦 {html.escape(sel.get("banco",""))} • Lote: {html.escape(sel.get("lote","") or "Sem lote")}</div>
+                        </div>
+                        <span class="status-pill" style="color:{color};">{html.escape(status_label(status).upper())}</span>
+                    </div>
+                    <div class="lead-phone" style="margin:14px 0 4px;">{html.escape(phone_display(sel.get("telefone")))}</div>
+                    <div class="small-muted">DDD {html.escape(sel.get("ddd") or "—")} • Tentativas {safe_int(sel.get("tentativas"))} • Último contato {html.escape(sel.get("ultima","Nunca"))}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            url_tel = f"tel:{normalize_digits(sel.get('telefone'))}"
+            wa_digits = normalize_digits(sel.get("telefone"))
+            if len(wa_digits) in (10, 11):
+                wa_url = f"https://wa.me/55{wa_digits}"
+            else:
+                wa_url = ""
+
+            c_call, c_wa, c_next = st.columns(3)
+            with c_call:
+                st.link_button("📱 Ligar", url_tel, use_container_width=True)
+            with c_wa:
+                if wa_url:
+                    st.link_button("💬 WhatsApp", wa_url, use_container_width=True)
+                else:
+                    st.button("💬 WhatsApp indisponível", disabled=True, use_container_width=True)
+            with c_next:
+                if st.button("➡️ Próximo pendente", use_container_width=True):
+                    pending = [
+                        x for x in st.session_state.leads
+                        if x.get("status") == "pendente" and x.get("id") != sel.get("id")
+                    ]
+                    pending.sort(
+                        key=lambda x: (
+                            0 if x.get("ultima") == "Nunca" else 1,
+                            safe_int(x.get("tentativas")),
+                            x.get("nome", "").lower(),
+                        )
+                    )
+                    st.session_state.selected_id = pending[0]["id"] if pending else None
+                    st.rerun()
+
+            st.markdown("#### Ações de atendimento")
+            a1, a2, a3, a4, a5 = st.columns(5)
+
+            with a1:
+                if st.button("✅ Atendeu", key=f"att_{sel['id']}", use_container_width=True, type="primary"):
+                    atualizar_lead(sel, "atendido", "Atendeu")
+
+            with a2:
+                if st.button("📬 Não atendeu", key=f"no_{sel['id']}", use_container_width=True):
+                    atualizar_lead(sel, "nao_atendeu", "Não atendeu")
+
+            with a3:
+                if st.button("💰 Venda", key=f"sale_{sel['id']}", use_container_width=True):
+                    atualizar_lead(sel, "venda_finalizada", "Venda concluída")
+
+            with a4:
+                if st.button("📁 Arquivar", key=f"archive_{sel['id']}", use_container_width=True):
+                    atualizar_lead(sel, "arquivado", "Arquivado")
+
+            with a5:
+                if st.button("↩️ Reabrir", key=f"reopen_{sel['id']}", use_container_width=True):
+                    atualizar_lead(sel, "pendente", "Retornado para pendentes")
+
+            st.markdown("#### 🕒 Agendar retorno")
+            ret_date = st.date_input(
+                "Data do retorno",
+                value=datetime.now().date() + timedelta(days=1),
+                min_value=datetime.now().date(),
+                key=f"ret_date_{sel['id']}",
+            )
+            ret_time = st.time_input(
+                "Horário do retorno",
+                value=datetime.now().time().replace(second=0, microsecond=0),
+                key=f"ret_time_{sel['id']}",
+            )
+            r1, r2 = st.columns([2, 1])
+            with r1:
+                retorno_obs = st.text_input(
+                    "Observação do retorno",
+                    value=clean_text(sel.get("retorno_hora")),
+                    key=f"ret_obs_{sel['id']}",
+                )
+            with r2:
+                if st.button("⏰ Agendar retorno", use_container_width=True):
+                    when = datetime.combine(ret_date, ret_time).strftime("%d/%m/%Y %H:%M")
+                    atualizar_lead(
+                        sel,
+                        "retorno_futuro",
+                        retorno_obs or f"Retorno agendado para {when}",
+                        {"retorno_hora": when},
+                    )
+
+            st.markdown("#### 📝 Cliente")
+            notes = st.text_area(
+                "Notas",
+                value=clean_text(sel.get("notas_cliente")),
+                height=100,
+                key=f"notes_{sel['id']}",
+                label_visibility="collapsed",
+                placeholder="Anote perfil, interesse, objeções, observações...",
+            )
+            n1, n2 = st.columns(2)
+            with n1:
+                if st.button("💾 Salvar observações", use_container_width=True):
+                    sel["notas_cliente"] = notes
+                    registrar_historico(sel, "nota", "Observação atualizada")
+                    if salvar_dados():
+                        st.success("Observações salvas.")
+            with n2:
+                if st.button("🗑️ Remover da base", use_container_width=True):
+                    st.session_state.leads = [
+                        x for x in st.session_state.leads
+                        if x.get("id") != sel.get("id")
+                    ]
+                    st.session_state.selected_id = None
+                    salvar_dados()
+                    st.rerun()
+
+            with st.expander("📜 Histórico do lead"):
+                history = sel.get("historico") or []
+                if not history:
+                    st.caption("Sem histórico.")
+                else:
+                    for item in reversed(history[-20:]):
+                        st.markdown(
+                            f"**{html.escape(clean_text(item.get('data')))}** — "
+                            f"{html.escape(status_label(item.get('acao','')))}  \n"
+                            f"{html.escape(clean_text(item.get('texto')))}"
+                        )
+
+
+# ============================================================
+# RETORNOS
+# ============================================================
 with tab_ret:
-    st.markdown(f"### ⏰ Retornos ({retornos_total})")
-    lista=filtrar_lista("RETORNOS")
-    if not lista:
-        st.info("Nenhum retorno")
+    retorno_list = [x for x in st.session_state.leads if x.get("status") == "retorno_futuro"]
+
+    if not retorno_list:
+        st.info("Nenhum retorno agendado.")
     else:
-        for lead in lista:
-            with st.container(border=True):
-                st.markdown(f"**{lead['nome']} | {lead['banco']} | {lead['telefone']}**")
-                st.caption(f"{lead.get('observacao','')[:60]}")
-                if st.button("📥 Voltar p/ Pendentes", key=f"ret_{lead['id']}", use_container_width=True):
-                    lead["status"]="pendente"
-                    salvar_dados()
+        retorno_list.sort(key=lambda x: x.get("retorno_hora", "99/99/9999"))
+        for lead in retorno_list:
+            with st.container():
+                st.markdown(
+                    f"""
+                    <div class="card">
+                        <div style="font-size:15px;font-weight:800;">⏰ {html.escape(lead.get("nome",""))}</div>
+                        <div class="small-muted">{bank_emoji(lead.get("banco"))} {html.escape(lead.get("banco",""))} • {html.escape(phone_display(lead.get("telefone")))}</div>
+                        <div style="margin-top:8px;"><b>Retorno:</b> {html.escape(lead.get("retorno_hora") or "Sem horário")}</div>
+                        <div class="small-muted">{html.escape(lead.get("observacao") or "")}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if st.button("📥 Voltar para pendentes", key=f"ret_pending_{lead['id']}", use_container_width=True, type="primary"):
+                        atualizar_lead(lead, "pendente", "Retorno convertido em pendente", {"retorno_hora": ""})
+                with c2:
+                    if st.button("📞 Abrir no discador", key=f"ret_open_{lead['id']}", use_container_width=True):
+                        st.session_state.selected_id = lead["id"]
+                        st.session_state.filtro_status = "RETORNOS"
+                        st.rerun()
+                with c3:
+                    if st.button("❌ Cancelar retorno", key=f"ret_cancel_{lead['id']}", use_container_width=True):
+                        atualizar_lead(lead, "arquivado", "Retorno cancelado", {"retorno_hora": ""})
+
+
+# ============================================================
+# VENDAS
+# ============================================================
+with tab_vendas:
+    st.markdown(
+        f"""
+        <div class="venda-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-size:16px;font-weight:800;">💰 Central de Vendas</div>
+                    <div class="small-muted">{vendas} vendas totais • {vendas_hoje} hoje</div>
+                </div>
+                <div style="font-size:28px;font-weight:900;color:#ffab00;">{vendas}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    sale_list = [x for x in st.session_state.leads if x.get("status") == "venda_finalizada"]
+    sale_banks = sorted({x.get("banco", "") for x in sale_list if x.get("banco")})
+    sale_filter = st.selectbox("Filtrar vendas por banco", ["TODOS"] + sale_banks, key="sale_filter")
+
+    if sale_filter != "TODOS":
+        sale_list = [x for x in sale_list if x.get("banco") == sale_filter]
+
+    if not sale_list:
+        st.info("Nenhuma venda encontrada.")
+    else:
+        for lead in sale_list[:100]:
+            st.markdown(
+                f"""
+                <div class="venda-card">
+                    <div style="font-weight:800;">💰 {html.escape(lead.get("nome",""))} • {bank_emoji(lead.get("banco"))} {html.escape(lead.get("banco",""))}</div>
+                    <div class="small-muted">📱 {html.escape(phone_display(lead.get("telefone")))} • {html.escape(lead.get("ultima",""))} • T{safe_int(lead.get("tentativas"))}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🔄 Voltar para pendentes", key=f"sale_back_{lead['id']}", use_container_width=True):
+                    atualizar_lead(lead, "pendente", "Venda revertida para pendente")
+            with c2:
+                if st.button("📞 Abrir lead", key=f"sale_open_{lead['id']}", use_container_width=True):
+                    st.session_state.selected_id = lead["id"]
                     st.rerun()
 
+
+# ============================================================
+# ARQUIVADOS
+# ============================================================
 with tab_arq:
-    st.markdown(f"### 📁 Arquivados ({arquivados})")
-    lista=filtrar_lista("ARQUIVADOS")
-    if not lista:
-        st.info("Nenhum arquivado")
+    archive_list = [x for x in st.session_state.leads if x.get("status") == "arquivado"]
+
+    if not archive_list:
+        st.info("Nenhum lead arquivado.")
     else:
-        for lead in lista[:50]:
-            with st.container(border=True):
-                st.markdown(f"**📁 {lead['nome']} | {lead['banco']} | {lead['telefone']}**")
-                if st.button("🔄 Voltar", key=f"arq_voltar_{lead['id']}", use_container_width=True, type="primary"):
-                    lead["status"]="pendente"
+        st.caption(f"{len(archive_list)} lead(s) arquivado(s)")
+        for lead in archive_list[:100]:
+            st.markdown(
+                f"""
+                <div class="card" style="margin-bottom:8px;">
+                    <div style="font-weight:800;">📁 {html.escape(lead.get("nome",""))} • {html.escape(lead.get("banco",""))}</div>
+                    <div class="small-muted">{html.escape(phone_display(lead.get("telefone")))} • Motivo: {html.escape(lead.get("arquivado_motivo") or lead.get("observacao") or "—")}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🔄 Voltar", key=f"arch_back_{lead['id']}", use_container_width=True, type="primary"):
+                    atualizar_lead(lead, "pendente", "Lead reaberto")
+            with c2:
+                if st.button("🗑️ Excluir definitivamente", key=f"arch_delete_{lead['id']}", use_container_width=True):
+                    st.session_state.leads = [x for x in st.session_state.leads if x.get("id") != lead.get("id")]
                     salvar_dados()
                     st.rerun()
 
-with tab_lotes:
-    st.markdown("### 📦 Lotes")
-    st.info("Upload de planilhas aqui")
 
+# ============================================================
+# LOTES / IMPORTAÇÃO
+# ============================================================
+with tab_lotes:
+    left, right = st.columns([1.1, 1.4], gap="large")
+
+    with left:
+        st.markdown('<div class="card"><div class="section-title">📦 Criar lote</div></div>', unsafe_allow_html=True)
+        lote_nome = st.text_input("Nome do lote", placeholder="Ex.: INSS Setembro 01")
+        lote_desc = st.text_input("Descrição", placeholder="Origem, convênio, campanha...")
+        if st.button("➕ Criar lote", use_container_width=True, type="primary"):
+            if not lote_nome.strip():
+                st.warning("Informe um nome para o lote.")
+            else:
+                st.session_state.lotes.append(
+                    {
+                        "id": f"lote_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                        "nome": lote_nome.strip(),
+                        "descricao": lote_desc.strip(),
+                        "criado_em": now_full(),
+                        "quantidade": 0,
+                    }
+                )
+                if salvar_dados():
+                    st.success(f"Lote '{lote_nome}' criado.")
+                    st.rerun()
+
+        st.markdown("#### Lotes cadastrados")
+        if not st.session_state.lotes:
+            st.caption("Nenhum lote cadastrado.")
+        else:
+            for lote in st.session_state.lotes:
+                st.markdown(
+                    f"""
+                    <div class="card" style="margin-bottom:8px;">
+                        <b>📦 {html.escape(clean_text(lote.get("nome")))}</b><br>
+                        <span class="small-muted">{html.escape(clean_text(lote.get("descricao")))} • Criado {html.escape(clean_text(lote.get("criado_em")))}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    with right:
+        st.markdown('<div class="card"><div class="section-title">⬆️ Importar leads</div><div class="small-muted">CSV ou Excel. Colunas aceitas: nome, telefone, banco, lote.</div></div>', unsafe_allow_html=True)
+
+        selected_lote = st.selectbox(
+            "Associar ao lote",
+            ["SEM LOTE"] + [clean_text(x.get("nome")) for x in st.session_state.lotes],
+        )
+        uploaded = st.file_uploader(
+            "Escolha o arquivo",
+            type=["csv", "xlsx", "xls"],
+            key="lead_uploader",
+        )
+
+        if uploaded:
+            try:
+                if uploaded.name.lower().endswith(".csv"):
+                    try:
+                        preview_df = pd.read_csv(uploaded, sep=None, engine="python", dtype=str).fillna("")
+                    except Exception:
+                        uploaded.seek(0)
+                        preview_df = pd.read_csv(uploaded, dtype=str).fillna("")
+                else:
+                    preview_df = pd.read_excel(uploaded, dtype=str).fillna("")
+
+                st.dataframe(preview_df.head(20), use_container_width=True, hide_index=True)
+                st.caption(f"{len(preview_df)} linha(s) lida(s).")
+
+                if st.button("✅ Importar agora", key="import_leads", use_container_width=True, type="primary"):
+                    normalized_columns = {
+                        clean_text(col).lower(): col for col in preview_df.columns
+                    }
+
+                    def col_value(row, keys):
+                        for key in keys:
+                            original = normalized_columns.get(key)
+                            if original is not None:
+                                return clean_text(row.get(original))
+                        return ""
+
+                    imported = []
+                    for idx, (_, row) in enumerate(preview_df.iterrows()):
+                        nome = col_value(row, ["nome", "name", "cliente"])
+                        telefone = col_value(row, ["telefone", "phone", "celular", "whatsapp"])
+                        banco = col_value(row, ["banco", "bank"])
+                        lote = col_value(row, ["lote"])
+
+                        if not nome and not telefone:
+                            continue
+
+                        lead = default_lead(
+                            {
+                                "nome": nome or f"Lead importado {idx + 1}",
+                                "telefone": telefone,
+                                "banco": banco or "NÃO INFORMADO",
+                                "lote": lote or ("" if selected_lote == "SEM LOTE" else selected_lote),
+                                "status": "pendente",
+                            },
+                            idx,
+                        )
+                        imported.append(lead)
+
+                    if imported:
+                        existing_phones = {
+                            normalize_digits(x.get("telefone"))
+                            for x in st.session_state.leads
+                            if normalize_digits(x.get("telefone"))
+                        }
+                        unique_imported = [
+                            x for x in imported
+                            if normalize_digits(x.get("telefone")) not in existing_phones
+                        ]
+                        duplicates = len(imported) - len(unique_imported)
+                        st.session_state.leads.extend(unique_imported)
+                        salvar_dados()
+                        st.success(
+                            f"{len(unique_imported)} lead(s) importado(s). "
+                            f"{duplicates} duplicado(s) ignorado(s)."
+                        )
+                        st.rerun()
+                    else:
+                        st.warning("Nenhuma linha válida encontrada.")
+            except Exception as exc:
+                st.error(f"Não foi possível ler o arquivo: {exc}")
+
+    st.divider()
+    st.markdown("#### ➕ Cadastro manual")
+    c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1])
+    with c1:
+        new_name = st.text_input("Nome", key="manual_name")
+    with c2:
+        new_phone = st.text_input("Telefone", key="manual_phone")
+    with c3:
+        new_bank = st.text_input("Banco", key="manual_bank")
+    with c4:
+        new_lote = st.text_input("Lote", key="manual_lote")
+
+    if st.button("➕ Adicionar lead", key="manual_add", use_container_width=True):
+        if not new_name.strip() and not new_phone.strip():
+            st.warning("Preencha pelo menos nome ou telefone.")
+        else:
+            new_lead = default_lead(
+                {
+                    "nome": new_name,
+                    "telefone": new_phone,
+                    "banco": new_bank,
+                    "lote": new_lote,
+                    "status": "pendente",
+                },
+                len(st.session_state.leads),
+            )
+            st.session_state.leads.append(new_lead)
+            salvar_dados()
+            st.success("Lead adicionado.")
+            st.rerun()
+
+
+# ============================================================
+# RELATÓRIOS
+# ============================================================
 with tab_rel:
-    st.markdown("### 📊 Relatórios")
-    if st.session_state.leads:
-        df=pd.DataFrame(st.session_state.leads)
-        st.bar_chart(df["status"].value_counts())
+    df = pd.DataFrame(st.session_state.leads)
+
+    if df.empty:
+        st.info("Sem dados para gerar relatório.")
+    else:
+        r1, r2, r3 = st.columns(3)
+
+        status_counts = df["status"].map(status_label).value_counts()
+        bank_counts = df["banco"].fillna("NÃO INFORMADO").value_counts().head(10)
+
+        with r1:
+            st.markdown('<div class="card"><div class="section-title">📊 Distribuição por status</div></div>', unsafe_allow_html=True)
+            st.bar_chart(status_counts)
+
+        with r2:
+            st.markdown('<div class="card"><div class="section-title">🏦 Leads por banco</div></div>', unsafe_allow_html=True)
+            st.bar_chart(bank_counts)
+
+        with r3:
+            total_non_archived = max(total - arquivados, 0)
+            conversion = (vendas / total_non_archived * 100) if total_non_archived else 0
+            st.metric("Conversão para venda", f"{conversion:.1f}%")
+            st.metric("Vendas hoje", vendas_hoje)
+            st.metric("Meta diária", safe_int(st.session_state.meta_diaria, 20))
+
+        export_cols = [
+            col for col in [
+                "id", "nome", "telefone", "ddd", "banco", "status",
+                "tentativas", "ultima", "retorno_hora", "lote",
+                "observacao", "notas_cliente"
+            ] if col in df.columns
+        ]
+        export_df = df[export_cols].copy()
+        csv = export_df.to_csv(index=False).encode("utf-8-sig")
+
+        st.download_button(
+            "⬇️ Baixar relatório CSV",
+            data=csv,
+            file_name=f"AK_Discadora_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            type="primary",
+        )
+
+        with st.expander("🔎 Visualizar base completa"):
+            st.dataframe(export_df, use_container_width=True, hide_index=True)
+
+
+# ============================================================
+# RODAPÉ / STATUS
+# ============================================================
+st.markdown(
+    f"""
+    <div style="text-align:center;opacity:.38;font-size:10px;padding:24px 0 6px;">
+        A&K Discadora • v{APP_VERSION} • {len(st.session_state.leads)} leads • sincronização {'GitHub + local' if GITHUB_API else 'local'}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
