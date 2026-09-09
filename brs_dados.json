@@ -1553,31 +1553,6 @@
       "ddd": "11"
     },
     {
-      "id": "0d74f9c97efb",
-      "nome": "Adriana Cardoso Santos",
-      "cpf": "634.963.658-31",
-      "telefone": "47992128836",
-      "banco": "MERCANTIL",
-      "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
-      "duracao_seg": 0,
-      "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
-      "notas_cliente": "",
-      "arquivado_motivo": "",
-      "retorno_hora": "",
-      "canal": "chip",
-      "custo_estimado": 0.0,
-      "retorno_data": null,
-      "lote": "BRS-PAN-150-Leads-TESTE.csv",
-      "data_import": "09/09 03:47",
-      "ddd": "47"
-    },
-    {
       "id": "9dcb76f736ba",
       "nome": "Bianca Araujo Lima",
       "cpf": "710.558.523-12",
@@ -3796,6 +3771,34 @@
   ],
   "nao_perturbe": [],
   "meta_diaria": 20,
-  "excluidos": [],
-  "atualizado_em": "09/09/2026 15:34:10"
+  "excluidos": [
+    {
+      "id": "0d74f9c97efb",
+      "nome": "Adriana Cardoso Santos",
+      "cpf": "634.963.658-31",
+      "telefone": "47992128836",
+      "banco": "MERCANTIL",
+      "produto": "FGTS",
+      "status": "pendente",
+      "tentativas": 0,
+      "ultima": "Nunca",
+      "duracao_seg": 0,
+      "duracao_txt": "00:00",
+      "historico": [],
+      "tabulacao": "",
+      "observacao": "",
+      "notas_cliente": "",
+      "arquivado_motivo": "",
+      "retorno_hora": "",
+      "canal": "chip",
+      "custo_estimado": 0.0,
+      "retorno_data": null,
+      "lote": "BRS-PAN-150-Leads-TESTE.csv",
+      "data_import": "09/09 03:47",
+      "ddd": "47",
+      "excluido_em": "09/09/2026 15:35:05",
+      "excluido_motivo": "Excluído manualmente"
+    }
+  ],
+  "atualizado_em": "09/09/2026 15:35:05"
 }
