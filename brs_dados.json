@@ -3763,19 +3763,10 @@
       "importados": 150,
       "ignorados": 12,
       "detalhe": "Tel:0 Bloq:0 Dup:12 DDD:0 NP:0"
-    },
-    {
-      "id": "ee189933",
-      "nome": "BRS-PAN-150-Leads-TESTE.xlsx",
-      "data": "09/09 03:47:36",
-      "qtd": 162,
-      "importados": 0,
-      "ignorados": 162,
-      "detalhe": "Tel:0 Bloq:0 Dup:162 DDD:0 NP:0"
     }
   ],
   "nao_perturbe": [],
   "meta_diaria": 20,
   "excluidos": [],
-  "atualizado_em": "09/09/2026 15:31:33"
+  "atualizado_em": "09/09/2026 15:31:39"
 }
