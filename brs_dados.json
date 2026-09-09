@@ -167,12 +167,19 @@
       "telefone": "71986838551",
       "banco": "SAFRA",
       "produto": "FGTS",
-      "status": "pendente",
+      "status": "arquivado",
       "tentativas": 0,
-      "ultima": "Nunca",
+      "ultima": "09/09 03:29",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
+      "historico": [
+        {
+          "data": "09/09 03:29:20",
+          "acao": "arquivado",
+          "tempo": "00:00",
+          "tab": "Já foi ligado - ocultar da lista"
+        }
+      ],
       "tabulacao": "",
       "observacao": "",
       "canal": "chip",
@@ -182,7 +189,7 @@
       "data_import": "09/09 02:48",
       "ddd": "71",
       "notas_cliente": "",
-      "arquivado_motivo": "",
+      "arquivado_motivo": "Já foi ligado - ocultar da lista",
       "retorno_hora": ""
     },
     {
