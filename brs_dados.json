@@ -94,14 +94,21 @@
       "telefone": "71990851251",
       "banco": "ORIGINAL",
       "produto": "FGTS",
-      "status": "pendente",
-      "tentativas": 0,
-      "ultima": "Nunca",
+      "status": "atendido",
+      "tentativas": 1,
+      "ultima": "09/09 02:51",
       "duracao_seg": 0,
       "duracao_txt": "00:00",
-      "historico": [],
-      "tabulacao": "",
-      "observacao": "",
+      "historico": [
+        {
+          "data": "09/09 02:51:05",
+          "acao": "atendido",
+          "tempo": "00:00",
+          "tab": "Sem interesse"
+        }
+      ],
+      "tabulacao": "Sem interesse",
+      "observacao": "Sem interesse",
       "canal": "chip",
       "custo_estimado": 0.0,
       "retorno_data": null,
