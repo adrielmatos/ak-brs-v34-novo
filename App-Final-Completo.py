@@ -19,8 +19,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-APP_VERSION = "3.0"
+APP_VERSION = "4.0"
 LOCAL_FILE = "brs_dados_local.json"
+DELETED_FILE = "brs_excluidos_local.json"
 GITHUB_PATH = "brs_dados.json"
 
 BANCO_EMOJI = {
@@ -377,7 +378,9 @@ def migrate_data(data):
     lotes = data.get("lotes") if isinstance(data.get("lotes"), list) else []
     nao_perturbe = data.get("nao_perturbe") if isinstance(data.get("nao_perturbe"), list) else []
     meta_diaria = safe_int(data.get("meta_diaria"), 20)
-    return leads, blocklist, lotes, nao_perturbe, meta_diaria
+    excluidos_raw = data.get("excluidos", [])
+    excluidos = [default_lead(item, i) for i, item in enumerate(excluidos_raw if isinstance(excluidos_raw, list) else [])]
+    return leads, blocklist, lotes, nao_perturbe, meta_diaria, excluidos
 
 
 # ============================================================
@@ -550,10 +553,13 @@ if "leads" not in st.session_state:
         st.session_state.lotes,
         st.session_state.nao_perturbe,
         st.session_state.meta_diaria,
+        st.session_state.excluidos,
     ) = carregar_dados()
 
 if "selected_id" not in st.session_state:
     st.session_state.selected_id = None
+if "dashboard_view" not in st.session_state:
+    st.session_state.dashboard_view = "discador"
 if "busca_global" not in st.session_state:
     st.session_state.busca_global = ""
 if "filtro_banco" not in st.session_state:
@@ -735,14 +741,56 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-m1.metric("Total", total)
-m2.metric("Pendentes", pendentes)
-m3.metric("Nunca", nunca)
-m4.metric("Atendidos", atendidos)
-m5.metric("Vendas", vendas)
-m6.metric("Retornos", retornos)
-m7.metric("Arquivados", arquivados)
+st.markdown("### Atalhos do painel")
+kpis = [
+    ("📱", "Total", total, "todos"),
+    ("📥", "Pendentes", pendentes, "pendentes"),
+    ("🆕", "Nunca", nunca, "nunca"),
+    ("✅", "Atendidos", atendidos, "atendidos"),
+    ("💰", "Vendas", vendas, "vendas"),
+    ("⏰", "Retornos", retornos, "retornos"),
+    ("📁", "Arquivados", arquivados, "arquivados"),
+    ("🗑️", "Excluídos", len(st.session_state.get("excluidos", [])), "excluidos"),
+]
+cols = st.columns(len(kpis))
+for col, (icon, label, value, target) in zip(cols, kpis):
+    with col:
+        if st.button(f"{icon}  {label}\n{value}", key=f"kpi_{target}", use_container_width=True, type="primary" if st.session_state.dashboard_view == target else "secondary"):
+            st.session_state.dashboard_view = target
+            st.rerun()
+
+def render_kpi_panel(target):
+    titles = {
+        "todos": "📱 Todos os leads", "pendentes": "📥 Leads pendentes", "nunca": "🆕 Nunca ligados",
+        "atendidos": "✅ Leads atendidos", "vendas": "💰 Central de vendas", "retornos": "⏰ Retornos agendados",
+        "arquivados": "📁 Leads arquivados", "excluidos": "🗑️ Leads excluídos",
+    }
+    if target not in titles:
+        return
+    st.markdown(f"## {titles[target]}")
+    if target == "excluidos":
+        items = list(st.session_state.get("excluidos", []))
+        if not items:
+            st.info("Nenhum contato foi excluído da base.")
+            return
+        for lead in items[:100]:
+            st.markdown(f"<div class='card' style='margin-bottom:8px;'><b>🗑️ {html.escape(lead.get('nome',''))}</b><br><span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • {html.escape(lead.get('banco',''))} • Excluído em {html.escape(lead.get('excluido_em','—'))}</span><br><span class='small-muted'>Motivo: {html.escape(lead.get('excluido_motivo','Excluído da base'))}</span></div>", unsafe_allow_html=True)
+        return
+    mapping = {
+        "todos": lambda x: True, "pendentes": lambda x: x.get("status") == "pendente",
+        "nunca": lambda x: x.get("status") == "pendente" and x.get("ultima") == "Nunca",
+        "atendidos": lambda x: x.get("status") == "atendido", "vendas": lambda x: x.get("status") == "venda_finalizada",
+        "retornos": lambda x: x.get("status") == "retorno_futuro", "arquivados": lambda x: x.get("status") == "arquivado",
+    }
+    items = [x for x in st.session_state.leads if mapping[target](x)]
+    if not items:
+        st.info("Nenhum lead encontrado.")
+        return
+    for lead in items[:100]:
+        st.markdown(f"<div class='card' style='margin-bottom:8px;'><b>{bank_emoji(lead.get('banco'))} {html.escape(lead.get('nome',''))}</b><br><span class='small-muted'>{html.escape(phone_display(lead.get('telefone')))} • {html.escape(lead.get('banco',''))} • {html.escape(status_label(lead.get('status')))}</span></div>", unsafe_allow_html=True)
+
+render_kpi_panel(st.session_state.dashboard_view)
+st.divider()
 
 
 # ============================================================
@@ -878,14 +926,10 @@ with st.sidebar:
 # ============================================================
 # ABAS
 # ============================================================
-tab_disc, tab_ret, tab_vendas, tab_arq, tab_lotes, tab_rel = st.tabs(
+tab_disc, tab_ret, tab_vendas, tab_arq, tab_exc, tab_lotes, tab_rel = st.tabs(
     [
-        "🎯 Discador",
-        "⏰ Retornos",
-        "💰 Vendas",
-        "📁 Arquivados",
-        "📦 Lotes / Importar",
-        "📊 Relatórios",
+        "🎯 Discador", "⏰ Retornos", "💰 Vendas", "📁 Arquivados",
+        "🗑️ Excluídos", "📦 Lotes / Importar", "📊 Relatórios",
     ]
 )
 
@@ -1067,11 +1111,12 @@ with tab_disc:
                     if salvar_dados():
                         st.success("Observações salvas.")
             with n2:
-                if st.button("🗑️ Remover da base", use_container_width=True):
-                    st.session_state.leads = [
-                        x for x in st.session_state.leads
-                        if x.get("id") != sel.get("id")
-                    ]
+                if st.button("🗑️ Excluir da base", use_container_width=True):
+                    removed = dict(sel)
+                    removed["excluido_em"] = now_full()
+                    removed["excluido_motivo"] = "Excluído manualmente da base"
+                    st.session_state.excluidos.append(removed)
+                    st.session_state.leads = [x for x in st.session_state.leads if x.get("id") != sel.get("id")]
                     st.session_state.selected_id = None
                     salvar_dados()
                     st.rerun()
@@ -1200,13 +1245,93 @@ with tab_arq:
                 if st.button("🔄 Voltar", key=f"arch_back_{lead['id']}", use_container_width=True, type="primary"):
                     atualizar_lead(lead, "pendente", "Lead reaberto")
             with c2:
-                if st.button("🗑️ Excluir definitivamente", key=f"arch_delete_{lead['id']}", use_container_width=True):
+                if st.button("🗑️ Excluir da base", key=f"arch_delete_{lead['id']}", use_container_width=True):
+                    removed = dict(lead)
+                    removed["excluido_em"] = now_full()
+                    removed["excluido_motivo"] = "Excluído a partir de Arquivados"
+                    st.session_state.excluidos.append(removed)
                     st.session_state.leads = [x for x in st.session_state.leads if x.get("id") != lead.get("id")]
                     salvar_dados()
                     st.rerun()
 
 
 # ============================================================
+def read_uploaded_table(uploaded):
+    name = uploaded.name.lower()
+    ext = os.path.splitext(name)[1]
+    if ext in {".csv", ".txt", ".tsv"}:
+        last_error = None
+        for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+            uploaded.seek(0)
+            try:
+                return pd.read_csv(uploaded, sep="\t" if ext == ".tsv" else None, engine="python", dtype=str, keep_default_na=False)
+            except Exception as exc:
+                last_error = exc
+        raise ValueError(f"Arquivo de texto não reconhecido: {last_error}")
+    engines = {".xlsx":["openpyxl"], ".xlsm":["openpyxl"], ".xltx":["openpyxl"], ".xltm":["openpyxl"], ".xls":["xlrd"], ".xlsb":["pyxlsb"], ".ods":["odf"], ".fods":["odf"]}.get(ext)
+    if not engines:
+        uploaded.seek(0)
+        return pd.read_excel(uploaded, dtype=str).fillna("")
+    last_error = None
+    for engine in engines:
+        uploaded.seek(0)
+        try:
+            return pd.read_excel(uploaded, engine=engine, dtype=str).fillna("")
+        except (ImportError, ValueError, OSError) as exc:
+            last_error = exc
+    raise RuntimeError(f"Não foi possível abrir {ext}. Instale o leitor correspondente ou verifique o arquivo. Detalhes: {last_error}")
+
+def normalize_column_name(value):
+    text = clean_text(value).lower()
+    text = re.sub(r"[^a-z0-9áàâãéêíóôõúç ]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    aliases = {
+        "nome completo":"nome", "cliente":"nome", "cliente nome":"nome", "name":"nome",
+        "celular":"telefone", "fone":"telefone", "telefone 1":"telefone", "phone":"telefone", "whatsapp":"telefone", "numero":"telefone", "número":"telefone",
+        "instituicao":"banco", "instituição":"banco", "banco atual":"banco", "bank":"banco",
+    }
+    return aliases.get(text, text)
+
+def prepare_import_dataframe(df):
+    df = df.copy()
+    df.columns = [normalize_column_name(c) for c in df.columns]
+    df = df.dropna(axis=1, how="all").fillna("")
+    if not {"nome", "telefone"}.intersection(set(df.columns)) and len(df.columns) >= 2:
+        cols=list(df.columns)
+        rename={cols[0]:"nome", cols[1]:"telefone"}
+        if len(cols)>=3: rename[cols[2]]="banco"
+        df=df.rename(columns=rename)
+    return df
+
+# EXCLUÍDOS
+# ============================================================
+with tab_exc:
+    st.markdown(f"<div class='card'><div class='section-title'>🗑️ Contatos excluídos da base</div><div class='small-muted'>{len(st.session_state.get('excluidos', []))} contato(s) protegidos contra reimportação automática.</div></div>", unsafe_allow_html=True)
+    excluded = st.session_state.get("excluidos", [])
+    if not excluded:
+        st.info("Nenhum contato excluído.")
+    else:
+        ex_search = st.text_input("Pesquisar excluídos", placeholder="Nome ou telefone", key="ex_search")
+        for lead in [x for x in excluded if ex_search.lower() in f"{x.get('nome','')} {x.get('telefone','')}".lower()][:200]:
+            st.markdown(f"<div class='card' style='margin-bottom:8px;'><b>🗑️ {html.escape(lead.get('nome',''))}</b> • {html.escape(lead.get('banco',''))}<br><span class='small-muted'>📱 {html.escape(phone_display(lead.get('telefone')))} • Excluído: {html.escape(lead.get('excluido_em','—'))}</span></div>", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("♻️ Restaurar", key=f"restore_deleted_{lead['id']}", use_container_width=True):
+                    restored = dict(lead)
+                    restored.pop("excluido_em", None)
+                    restored.pop("excluido_motivo", None)
+                    restored["status"] = "pendente"
+                    st.session_state.leads.append(restored)
+                    st.session_state.excluidos = [x for x in st.session_state.excluidos if x.get("id") != lead.get("id")]
+                    salvar_dados()
+                    st.rerun()
+            with c2:
+                if st.button("❌ Apagar histórico", key=f"purge_deleted_{lead['id']}", use_container_width=True):
+                    st.session_state.excluidos = [x for x in st.session_state.excluidos if x.get("id") != lead.get("id")]
+                    salvar_dados()
+                    st.rerun()
+
+
 # LOTES / IMPORTAÇÃO
 # ============================================================
 with tab_lotes:
@@ -1249,7 +1374,7 @@ with tab_lotes:
                 )
 
     with right:
-        st.markdown('<div class="card"><div class="section-title">⬆️ Importar leads</div><div class="small-muted">CSV ou Excel. Colunas aceitas: nome, telefone, banco, lote.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card"><div class="section-title">⬆️ Importar leads</div><div class="small-muted">Importação universal: CSV, TXT, TSV, XLS, XLSX, XLSM, XLSB, ODS e formatos compatíveis.</div></div>', unsafe_allow_html=True)
 
         selected_lote = st.selectbox(
             "Associar ao lote",
@@ -1257,27 +1382,20 @@ with tab_lotes:
         )
         uploaded = st.file_uploader(
             "Escolha o arquivo",
-            type=["csv", "xlsx", "xls"],
+            type=["csv", "txt", "tsv", "xlsx", "xls", "xlsm", "xltx", "xltm", "xlsb", "ods", "fods"],
             key="lead_uploader",
         )
 
         if uploaded:
             try:
-                if uploaded.name.lower().endswith(".csv"):
-                    try:
-                        preview_df = pd.read_csv(uploaded, sep=None, engine="python", dtype=str).fillna("")
-                    except Exception:
-                        uploaded.seek(0)
-                        preview_df = pd.read_csv(uploaded, dtype=str).fillna("")
-                else:
-                    preview_df = pd.read_excel(uploaded, dtype=str).fillna("")
+                preview_df = prepare_import_dataframe(read_uploaded_table(uploaded))
 
                 st.dataframe(preview_df.head(20), use_container_width=True, hide_index=True)
                 st.caption(f"{len(preview_df)} linha(s) lida(s).")
 
                 if st.button("✅ Importar agora", key="import_leads", use_container_width=True, type="primary"):
                     normalized_columns = {
-                        clean_text(col).lower(): col for col in preview_df.columns
+                        normalize_column_name(col): col for col in preview_df.columns
                     }
 
                     def col_value(row, keys):
@@ -1310,21 +1428,29 @@ with tab_lotes:
                         imported.append(lead)
 
                     if imported:
-                        existing_phones = {
-                            normalize_digits(x.get("telefone"))
-                            for x in st.session_state.leads
-                            if normalize_digits(x.get("telefone"))
-                        }
-                        unique_imported = [
-                            x for x in imported
-                            if normalize_digits(x.get("telefone")) not in existing_phones
-                        ]
-                        duplicates = len(imported) - len(unique_imported)
+                        existing_phones = {normalize_digits(x.get("telefone")) for x in st.session_state.leads if normalize_digits(x.get("telefone"))}
+                        deleted_phones = {normalize_digits(x.get("telefone")) for x in st.session_state.get("excluidos", []) if normalize_digits(x.get("telefone"))}
+                        seen_import = set()
+                        unique_imported = []
+                        blocked_deleted = 0
+                        duplicates = 0
+                        for item in imported:
+                            phone = normalize_digits(item.get("telefone"))
+                            if phone and phone in deleted_phones:
+                                blocked_deleted += 1
+                                continue
+                            if phone and (phone in existing_phones or phone in seen_import):
+                                duplicates += 1
+                                continue
+                            if phone:
+                                seen_import.add(phone)
+                            unique_imported.append(item)
                         st.session_state.leads.extend(unique_imported)
                         salvar_dados()
                         st.success(
                             f"{len(unique_imported)} lead(s) importado(s). "
-                            f"{duplicates} duplicado(s) ignorado(s)."
+                            f"{duplicates} duplicado(s) ignorado(s). "
+                            f"{blocked_deleted} excluído(s) da base foram bloqueado(s) para evitar reimportação."
                         )
                         st.rerun()
                     else:
